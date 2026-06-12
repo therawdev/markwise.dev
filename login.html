@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in — Markwise</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<div class="auth-wrap">
+  <form class="auth-card" id="form">
+    <div class="brand"><span class="brand-mark"></span><span class="brand-name">Markwise</span></div>
+    <h1>Welcome back</h1>
+    <p class="sub">Write. Visualize. Present.</p>
+    <label class="fld-label" for="email">Email</label>
+    <input class="fld" id="email" type="email" autocomplete="email" required>
+    <label class="fld-label" for="password">Password</label>
+    <input class="fld" id="password" type="password" autocomplete="current-password" required>
+    <div class="form-error" id="error"></div>
+    <button class="primary-btn" type="submit">Sign in</button>
+    <div class="auth-alt">New to Markwise? <a href="signup.html">Create an account</a></div>
+  </form>
+</div>
+<script src="app/api.js"></script>
+<script>
+  const form = document.getElementById('form');
+  const errEl = document.getElementById('error');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errEl.textContent = '';
+    try {
+      await MarkwiseAPI.post('/api/auth/login', {
+        email: document.getElementById('email').value.trim(),
+        password: document.getElementById('password').value,
+      });
+      const next = new URLSearchParams(location.search).get('next');
+      location.href = next && next.startsWith('/') ? next : '/docs.html';
+    } catch (e) {
+      errEl.textContent = e.message;
+    }
+  });
+</script>
+</body>
+</html>

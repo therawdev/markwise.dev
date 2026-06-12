@@ -1,25 +1,45 @@
-# CODING AGENTS: READ THIS FIRST
+# Markwise — Write. Visualize. Present.
 
-This is a **handoff bundle** from Claude Design (claude.ai/design).
+Turn text into visuals. Markwise is a document editor where you highlight a passage
+and AI turns it into a diagram — ~70 diagram types, 26 render styles, a freeform
+canvas board, a presentation builder with 200+ slide layouts, and export to
+PNG / SVG / PDF / Word / Markdown / PPTX.
 
-A user mocked up designs in HTML/CSS/JS using an AI design tool, then exported this bundle so a coding agent can implement the designs for real.
+Now a fullstack app: accounts, companies with role-based access control, an
+application-owner admin panel, and a pluggable AI provider layer.
 
-## What you should do — IMPORTANT
+## Quick start
 
-**Read the chat transcripts first.** There are 4 chat transcript(s) in `chats/`. The transcripts show the full back-and-forth between the user and the design assistant — they tell you **what the user actually wants** and **where they landed** after iterating. Don't skip them. The final HTML files are the output, but the chat is where the intent lives.
+```bash
+# Requires Node 18+ and PostgreSQL
+createdb markwise   # or use the credentials in server/.env.example
 
-**Read `project/Glyph - Text to Visuals.html` in full.** The user had this file open when they triggered the handoff, so it's almost certainly the primary design they want built. Read it top to bottom — don't skim. Then **follow its imports**: open every file it pulls in (shared components, CSS, scripts) so you understand how the pieces fit together before you start implementing.
+cd server
+cp .env.example .env   # fill in DATABASE_URL and AI keys
+npm install
+npm run migrate
+npm run seed           # prints the app-owner login once
+npm run dev            # → http://localhost:3000
+```
 
-**If anything is ambiguous, ask the user to confirm before you start implementing.** It's much cheaper to clarify scope up front than to build the wrong thing.
+Sign in at `http://localhost:3000/login.html`. The dashboard lives at `/docs.html`,
+the org settings at `/org.html?id=…`, and the owner panel at `/admin.html`.
 
-## About the design files
+## Features
 
-The design medium is **HTML/CSS/JS** — these are prototypes, not production code. Your job is to **recreate them pixel-perfectly** in whatever technology makes sense for the target codebase (React, Vue, native, whatever fits). Match the visual output; don't copy the prototype's internal structure unless it happens to fit.
+- **Editor** — write a doc, select text, hit ✦ Visualize; pick from live diagram
+  previews; click any element to recolor, resize, or edit it in place
+- **Canvas** — every visual as a draggable card on a pannable, zoomable board
+- **Present** — build a deck from the document; 50 themes, 200+ slide layouts,
+  full-screen present mode, PPTX/PDF export
+- **Companies & RBAC** — default Owner/User roles plus custom roles with
+  per-permission checkboxes; single-use invite links
+- **Admin panel** — users, companies, AI usage, audit log, AI provider switch
+- **AI providers** — OpenAI Codex SDK (default), Claude Code headless CLI, and
+  Claude SDK/API (currently disabled by policy toggle). No key? The built-in
+  offline parser still generates diagrams deterministically.
 
-**Don't render these files in a browser or take screenshots unless the user asks you to.** Everything you need — dimensions, colors, layout rules — is spelled out in the source. Read the HTML and CSS directly; a screenshot won't tell you anything they don't.
+## Development
 
-## Bundle contents
-
-- `README.md` — this file
-- `chats/` — conversation transcripts (read these!)
-- `project/` — the `Napkin Clone` project files (HTML prototypes, assets, components)
+See [CLAUDE.md](CLAUDE.md) for architecture, conventions, and the RBAC model.
+The original Claude Design handoff bundle is preserved in `chats/` and `project/`.
