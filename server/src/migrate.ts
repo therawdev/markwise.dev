@@ -73,6 +73,13 @@ async function migrate() {
     });
   }
 
+  // Public share links: a non-null token makes the doc readable at /share.html?t=<token>
+  if (!(await db.schema.hasColumn('documents', 'share_token'))) {
+    await db.schema.alterTable('documents', (t) => {
+      t.string('share_token').unique();
+    });
+  }
+
   if (!(await has('audit_logs'))) {
     await db.schema.createTable('audit_logs', (t) => {
       t.increments('id');

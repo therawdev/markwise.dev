@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Shared document — Markwise</title>
+<link rel="stylesheet" href="assets/site.css">
+<style>
+  .doc-wrap { max-width: 760px; margin: 36px auto 90px; padding: 0 22px; }
+  .doc-title { font-size: 30px; letter-spacing: -0.6px; margin: 0 0 6px; }
+  .doc-meta { color: var(--grey); font-size: 12.5px; margin-bottom: 28px; }
+  .doc-body h1 { font-size: 26px; letter-spacing: -0.5px; margin: 30px 0 10px; }
+  .doc-body h2 { font-size: 19px; letter-spacing: -0.3px; margin: 26px 0 8px; }
+  .doc-body p { font-size: 15px; line-height: 1.65; margin: 10px 0; }
+  .vis-block { margin: 22px auto; min-width: 240px; }
+  .vis-block svg { display: block; width: 100%; height: auto; }
+  .state { text-align: center; color: var(--grey); padding: 80px 0; font-size: 14px; }
+  .footer-note { text-align: center; color: var(--grey); font-size: 12px; margin-top: 50px; }
+  .footer-note a { text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a class="brand" href="/login.html"><span class="brand-mark"></span><span class="brand-name">Markwise</span></a>
+  <div class="topbar-right">
+    <span class="badge">Shared · read-only</span>
+    <a class="primary-btn" href="/signup.html" style="text-decoration:none">Try Markwise</a>
+  </div>
+</div>
+<div id="root"><div class="state">Loading document…</div></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<!-- Diagram rendering stack — same order as index.html (interact overrides Diagram from diagrams-b) -->
+<script type="text/babel" src="app/draw.jsx"></script>
+<script type="text/babel" src="app/icons.jsx"></script>
+<script type="text/babel" src="app/diagrams-a.jsx"></script>
+<script type="text/babel" src="app/diagrams-b.jsx"></script>
+<script type="text/babel" src="app/diagrams-c.jsx"></script>
+<script type="text/babel" src="app/diagrams-d.jsx"></script>
+<script type="text/babel" src="app/diagrams-e.jsx"></script>
+<script type="text/babel" src="app/diagrams-g.jsx"></script>
+<script type="text/babel" src="app/diagrams-h.jsx"></script>
+<script type="text/babel" src="app/diagrams-i.jsx"></script>
+<script type="text/babel" src="app/diagrams-j.jsx"></script>
+<script type="text/babel" src="app/diagrams-k.jsx"></script>
+<script type="text/babel" src="app/diagrams-l.jsx"></script>
+<script type="text/babel" src="app/diagrams-f.jsx"></script>
+<script type="text/babel" src="app/interact.jsx"></script>
+
+<script type="text/babel">
+(function () {
+  // The block HTML comes from the doc author's contentEditable — fine inside the
+  // authed editor, but this page is public, so strip anything executable.
+  function sanitizeHtml(html) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = String(html || '');
+    tpl.content.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach((n) => n.remove());
+    tpl.content.querySelectorAll('*').forEach((el) => {
+      [...el.attributes].forEach((a) => {
+        const name = a.name.toLowerCase();
+        if (name.startsWith('on') || ((name === 'href' || name === 'src' || name === 'xlink:href') && /^\s*(javascript|data|vbscript):/i.test(a.value))) {
+          el.removeAttribute(a.name);
+        }
+      });
+    });
+    return tpl.innerHTML;
+  }
+
+  function Viewer({ doc }) {
+    return (
+      <div className="doc-wrap">
+        <h1 className="doc-title">{doc.title}</h1>
+        <div className="doc-meta">Shared read-only · last updated {new Date(doc.updated_at).toLocaleDateString()}</div>
+        <div className="doc-body">
+          {(doc.blocks || []).map((b) => {
+            if (b.kind === 'visual' && b.visual) {
+              return (
+                <figure key={b.id} className="vis-block" style={{ width: (b.visual.width || 100) + '%' }}>
+                  <window.Diagram visual={b.visual} />
+                </figure>
+              );
+            }
+            const Tag = ['h1', 'h2', 'h3', 'p', 'blockquote'].includes(b.tag) ? b.tag : 'p';
+            return <Tag key={b.id} dangerouslySetInnerHTML={{ __html: sanitizeHtml(b.html) }} />;
+          })}
+        </div>
+        <div className="footer-note">Made with <a href="/signup.html">Markwise</a> — write, visualize, present.</div>
+      </div>
+    );
+  }
+
+  async function boot() {
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    const token = new URLSearchParams(location.search).get('t');
+    if (!token) {
+      root.render(<div className="state">This share link is incomplete.</div>);
+      return;
+    }
+    try {
+      const r = await fetch('/api/shared/' + encodeURIComponent(token));
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Not found');
+      const doc = await r.json();
+      document.title = doc.title + ' — Markwise';
+      root.render(<Viewer doc={doc} />);
+    } catch (e) {
+      root.render(<div className="state">This share link is invalid or has been revoked.</div>);
+    }
+  }
+  boot();
+})();
+</script>
+</body>
+</html>
