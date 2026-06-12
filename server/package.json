@@ -7,8 +7,12 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "tsx watch --env-file=.env src/index.ts",
     "start": "tsx --env-file=.env src/index.ts",
+    "start:prod": "tsx src/index.ts",
     "migrate": "tsx --env-file=.env src/migrate.ts",
-    "seed": "tsx --env-file=.env src/seed.ts"
+    "migrate:prod": "tsx src/migrate.ts",
+    "seed": "tsx --env-file=.env src/seed.ts",
+    "seed:prod": "tsx src/seed.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
@@ -24,6 +28,7 @@
     "knex": "^3.2.10",
     "openai": "^6.42.0",
     "pg": "^8.21.0",
+    "tsx": "^4.22.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -31,7 +36,6 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.9.3",
-    "tsx": "^4.22.4",
     "typescript": "^6.0.3"
   }
 }
