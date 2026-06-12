@@ -1,5 +1,6 @@
 import express from 'express';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { authRouter } from './routes/auth.js';
@@ -9,6 +10,17 @@ import { aiRouter } from './routes/ai.js';
 import { adminRouter } from './routes/admin.js';
 
 const app = express();
+// Behind a reverse proxy (Render, etc.) the client IP arrives in X-Forwarded-For;
+// rate limiting keys on req.ip, so trust exactly one proxy hop.
+app.set('trust proxy', 1);
+app.use(
+  helmet({
+    // The frontend compiles JSX in the browser (Babel standalone from unpkg) and
+    // uses inline scripts/styles throughout — a strict CSP would break it.
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
 app.use(express.json({ limit: '8mb' })); // documents carry full block JSON
 app.use(cookieParser());
 
