@@ -1,5 +1,8 @@
 # Markwise — Write. Visualize. Present.
 
+> **Continuing previous work?** Read [HANDOFF.md](HANDOFF.md) for the current
+> project state, decisions already made, and the pending task list.
+
 Fullstack text-to-visuals workspace: a document editor where selected text becomes
 diagrams (~70 types, 26 render styles), with a canvas board, presentation builder,
 multi-tenant RBAC, and a pluggable AI provider layer.
