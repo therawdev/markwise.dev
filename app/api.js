@@ -27,12 +27,17 @@
       catch (e) { if (e.status === 401) return null; throw e; }
     },
 
-    /** Require a signed-in user; redirect to login otherwise. */
+    /** Require a signed-in user; redirect to login otherwise.
+     *  Invite links land on signup instead — invitees are usually new users
+     *  (signup's "Sign in" link carries the invite through for existing ones). */
     async requireUser() {
       const user = await API.me();
       if (!user) {
         const next = encodeURIComponent(location.pathname + location.search);
-        location.href = '/login.html?next=' + next;
+        const invite = new URLSearchParams(location.search).get('invite');
+        location.href = invite
+          ? '/signup.html?invite=' + encodeURIComponent(invite) + '&next=' + next
+          : '/login.html?next=' + next;
         return null;
       }
       return user;

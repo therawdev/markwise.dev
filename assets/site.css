@@ -76,6 +76,8 @@ table.mw { width: 100%; border-collapse: collapse; background: var(--surface); b
 table.mw { border-radius: 14px; border-style: hidden; box-shadow: 0 0 0 1px var(--hairline); }
 table.mw th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; color: var(--grey); padding: 10px 14px; border-bottom: 1px solid var(--hairline); background: #fbfaf8; }
 table.mw td { padding: 11px 14px; border-bottom: 1px solid var(--hairline); font-size: 13px; }
+table.mw td a { color: var(--accent); font-weight: 600; text-decoration: none; }
+table.mw td a:hover { text-decoration: underline; }
 table.mw tr:last-child td { border-bottom: none; }
 .badge { font-size: 10px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 3px 8px; }
 .badge.warn { background: #fdf3f1; color: var(--danger); }

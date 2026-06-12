@@ -25,6 +25,8 @@
 <script>
   const form = document.getElementById('form');
   const errEl = document.getElementById('error');
+  // keep ?next / ?invite when switching to signup
+  document.querySelector('.auth-alt a').href = 'signup.html' + location.search;
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     errEl.textContent = '';

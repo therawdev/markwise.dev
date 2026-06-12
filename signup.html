@@ -27,6 +27,8 @@
 <script>
   const form = document.getElementById('form');
   const errEl = document.getElementById('error');
+  // keep ?next / ?invite when switching to sign-in
+  document.querySelector('.auth-alt a').href = 'login.html' + location.search;
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     errEl.textContent = '';
@@ -41,7 +43,14 @@
       if (invite) {
         try { await MarkwiseAPI.post('/api/orgs/invites/' + encodeURIComponent(invite) + '/accept'); } catch (e) { /* surfaced on docs page */ }
       }
-      location.href = '/docs.html';
+      let next = new URLSearchParams(location.search).get('next');
+      if (invite && next) {
+        // the single-use token was just consumed — drop it from the follow-up URL
+        const u = new URL(next, location.origin);
+        u.searchParams.delete('invite');
+        next = u.pathname + u.search;
+      }
+      location.href = next && next.startsWith('/') ? next : '/docs.html';
     } catch (e) {
       errEl.textContent = e.message;
     }
