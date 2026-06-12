@@ -115,9 +115,141 @@
     }, [undo]);
 
     // ----- text editing -----
+    const blocksRef = useRef(blocks);
+    blocksRef.current = blocks;
     const onHtml = useCallback((id, html) => {
       setBlocks((bs) => bs.map((b) => (b.id === id ? { ...b, html } : b)));
     }, []);
+
+    const newBlockId = () => 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const blockEl = (id) => document.querySelector('.sheet [data-block-id="' + id + '"]');
+    // place the caret at the start/end of a block (next frame, after React commits)
+    const focusEdge = (id, edge) => {
+      requestAnimationFrame(() => {
+        const el = blockEl(id);
+        if (!el) return;
+        el.focus();
+        const r = document.createRange();
+        r.selectNodeContents(el);
+        r.collapse(edge === 'start');
+        const s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+      });
+    };
+    // is the (collapsed) caret at the visible start/end of the block?
+    const caretEdges = (el, sel) => {
+      const r = sel.getRangeAt(0);
+      const pre = r.cloneRange();
+      pre.selectNodeContents(el);
+      pre.setEnd(r.startContainer, r.startOffset);
+      const post = r.cloneRange();
+      post.selectNodeContents(el);
+      post.setStart(r.endContainer, r.endOffset);
+      return { atStart: !pre.toString().length, atEnd: !post.toString().length };
+    };
+
+    // block-level keyboard: Enter splits, Backspace merges/deletes, Delete merges forward, arrows cross blocks
+    const onTextKeyRef = useRef(null);
+    onTextKeyRef.current = (id, e) => {
+      const bs = blocksRef.current;
+      const i = bs.findIndex((b) => b.id === id);
+      if (i === -1) return;
+      const b = bs[i];
+      const el = e.currentTarget;
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return;
+
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const r = sel.getRangeAt(0);
+        r.deleteContents();
+        const tail = document.createRange();
+        tail.selectNodeContents(el);
+        tail.setStart(r.startContainer, r.startOffset);
+        const tmp = document.createElement('div');
+        tmp.appendChild(tail.extractContents());
+        const tailHtml = tmp.innerHTML;
+        const nid = newBlockId();
+        const tag = tmp.textContent.trim() ? b.tag : 'p';
+        const html = el.innerHTML;
+        setBlocks((cur) => {
+          const j = cur.findIndex((x) => x.id === id);
+          if (j === -1) return cur;
+          const next = cur.map((x) => (x.id === id ? { ...x, html } : x));
+          next.splice(j + 1, 0, { id: nid, kind: 'text', tag, html: tailHtml, autoFocus: true });
+          return next;
+        });
+        focusEdge(nid, 'start');
+        return;
+      }
+
+      const { atStart, atEnd } = caretEdges(el, sel);
+
+      if (e.key === 'Backspace' && sel.isCollapsed && atStart) {
+        // a heading first demotes to a paragraph, like other block editors
+        if (b.tag !== 'p') {
+          e.preventDefault();
+          const html = el.innerHTML;
+          setBlocks((cur) => cur.map((x) => (x.id === id ? { ...x, tag: 'p', html } : x)));
+          focusEdge(id, 'start');
+          return;
+        }
+        if (i === 0) return;
+        const prev = bs[i - 1];
+        if (prev.kind === 'text') {
+          e.preventDefault();
+          const prevEl = blockEl(prev.id);
+          if (!prevEl) return;
+          const mark = prevEl.childNodes.length;
+          while (el.firstChild) prevEl.appendChild(el.firstChild);
+          const html = prevEl.innerHTML;
+          setBlocks((cur) => cur.filter((x) => x.id !== id).map((x) => (x.id === prev.id ? { ...x, html } : x)));
+          prevEl.focus();
+          const s = window.getSelection();
+          const rr = document.createRange();
+          rr.setStart(prevEl, Math.min(mark, prevEl.childNodes.length));
+          rr.collapse(true);
+          s.removeAllRanges();
+          s.addRange(rr);
+        } else {
+          // previous block is a visual: select it; an empty text block is consumed
+          e.preventDefault();
+          if (!(el.textContent || '').trim()) setBlocks((cur) => cur.filter((x) => x.id !== id));
+          setSelVis(prev.visual.id);
+        }
+        return;
+      }
+
+      if (e.key === 'Delete' && sel.isCollapsed && atEnd && i < bs.length - 1) {
+        const next = bs[i + 1];
+        if (next.kind === 'text') {
+          e.preventDefault();
+          const nextEl = blockEl(next.id);
+          if (!nextEl) return;
+          while (nextEl.firstChild) el.appendChild(nextEl.firstChild);
+          const html = el.innerHTML;
+          setBlocks((cur) => cur.filter((x) => x.id !== next.id).map((x) => (x.id === id ? { ...x, html } : x)));
+        } else {
+          e.preventDefault();
+          setSelVis(next.visual.id);
+        }
+        return;
+      }
+
+      if (e.key === 'ArrowUp' && sel.isCollapsed && atStart) {
+        for (let k = i - 1; k >= 0; k--) {
+          if (bs[k].kind === 'text') { e.preventDefault(); focusEdge(bs[k].id, 'end'); return; }
+        }
+        return;
+      }
+      if (e.key === 'ArrowDown' && sel.isCollapsed && atEnd) {
+        for (let k = i + 1; k < bs.length; k++) {
+          if (bs[k].kind === 'text') { e.preventDefault(); focusEdge(bs[k].id, 'start'); return; }
+        }
+      }
+    };
+    const onTextKey = useCallback((id, e) => onTextKeyRef.current(id, e), []);
     const onTag = useCallback((id, tag, lineIdx) => {
       setBlocks((bs) => {
         const i = bs.findIndex((b) => b.id === id);
@@ -141,9 +273,131 @@
       });
     }, []);
 
+    // ----- multi-block selection (drag across block boundaries selects whole blocks) -----
+    const [blockSel, setBlockSel] = useState(null); // array of selected block ids, in doc order
+    const blockSelRef = useRef(null);
+    const selVisRef = useRef(null);
+    selVisRef.current = selVis;
+    const clearBlockSel = useCallback(() => {
+      blockSelRef.current = null;
+      setBlockSel(null);
+    }, []);
+    useEffect(() => {
+      let anchor = null;
+      let dragging = false;
+      const idAt = (t) => {
+        const el = t && t.closest && t.closest('.sheet [data-block-id]');
+        return el ? el.dataset.blockId : null;
+      };
+      const rangeIds = (a, b) => {
+        const bs = blocksRef.current;
+        let ia = bs.findIndex((x) => x.id === a);
+        let ib = bs.findIndex((x) => x.id === b);
+        if (ia === -1 || ib === -1) return null;
+        if (ia > ib) { const t = ia; ia = ib; ib = t; }
+        return bs.slice(ia, ib + 1).map((x) => x.id);
+      };
+      const onDown = (e) => {
+        if (e.button !== 0) return;
+        if (e.target.closest && e.target.closest('.fmtbar, .vis-toolbar, .block-gap, .style-pop, .panel, .modal')) return;
+        if (blockSelRef.current) clearBlockSel();
+        // anchor only on text blocks — drags that start inside a visual (shape moves, resize) never block-select
+        const tb = e.target.closest && e.target.closest('.sheet .tb[data-block-id]');
+        anchor = tb ? tb.dataset.blockId : null;
+        dragging = !!anchor;
+      };
+      const onMove = (e) => {
+        if (!dragging || !anchor) return;
+        const cur = idAt(e.target);
+        if (!cur) return;
+        if (cur !== anchor || blockSelRef.current) {
+          const ids = rangeIds(anchor, cur);
+          if (!ids) return;
+          const s = window.getSelection();
+          if (s && !s.isCollapsed) s.removeAllRanges();
+          blockSelRef.current = ids;
+          setBlockSel(ids);
+          setFab(null);
+        }
+      };
+      const onUp = (e) => {
+        dragging = false;
+        const ids = blockSelRef.current;
+        if (!ids) return;
+        const bs = blocksRef.current;
+        const text = ids
+          .map((bid) => {
+            const b = bs.find((x) => x.id === bid);
+            if (!b || b.kind !== 'text') return '';
+            const d = document.createElement('div');
+            d.innerHTML = b.html;
+            return (d.textContent || '').trim();
+          })
+          .filter(Boolean)
+          .join('\n');
+        setFab({
+          x: e.clientX, y: e.clientY - 12,
+          text, blockId: ids[ids.length - 1],
+          multi: ids.length, canViz: text.length >= 12,
+          tag: null, lineIdx: null,
+        });
+      };
+      document.addEventListener('mousedown', onDown);
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      return () => {
+        document.removeEventListener('mousedown', onDown);
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+    }, [clearBlockSel]);
+
+    // visual highlight for the selected block range
+    useEffect(() => {
+      const ids = blockSel || [];
+      document.querySelectorAll('.sheet [data-block-id]').forEach((el) => {
+        el.classList.toggle('blk-sel', ids.indexOf(el.dataset.blockId) !== -1);
+      });
+    }, [blockSel, blocks]);
+
+    // Backspace/Delete removes a block selection or a selected visual; Escape clears
+    useEffect(() => {
+      const onKey = (e) => {
+        const ids = blockSelRef.current;
+        if (e.key === 'Escape' && ids) { clearBlockSel(); setFab(null); return; }
+        if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+        if (ids) {
+          e.preventDefault();
+          setBlocks((bs) => {
+            let next = bs.filter((b) => ids.indexOf(b.id) === -1);
+            if (!next.some((b) => b.kind === 'text')) {
+              next = [...next, { id: 'b' + Date.now().toString(36), kind: 'text', tag: 'p', html: '', autoFocus: true }];
+            }
+            return next;
+          });
+          clearBlockSel();
+          setFab(null);
+          return;
+        }
+        if (selVisRef.current) {
+          const ae = document.activeElement;
+          if (ae && (ae.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))) return;
+          const vb = blocksRef.current.find((b) => b.kind === 'visual' && b.visual.id === selVisRef.current);
+          if (vb) {
+            e.preventDefault();
+            setBlocks((bs) => bs.filter((b) => b.id !== vb.id));
+            setSelVis(null);
+          }
+        }
+      };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }, [clearBlockSel]);
+
     // ----- selection → format bar -----
     useEffect(() => {
       function check() {
+        if (blockSelRef.current) return; // block-mode owns the fab
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed) { setFab(null); return; }
         const text = sel.toString().trim();
@@ -167,6 +421,7 @@
       }
       function onUp() { setTimeout(check, 10); }
       function onSelChange() {
+        if (blockSelRef.current) return;
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed) setFab(null);
       }
@@ -192,6 +447,7 @@
       if (!fab) return;
       const { text, blockId } = fab;
       setFab(null);
+      clearBlockSel();
       window.getSelection() && window.getSelection().removeAllRanges();
       setPicker({ phase: 'loading', text, blockId });
       const spec = await window.GlyphAI.generate(text);
@@ -328,7 +584,7 @@
                 {blocksView.map((b) => (
                   <React.Fragment key={b.id}>
                     {b.kind === 'text' ? (
-                      <TextBlock block={b} onHtml={onHtml} />
+                      <TextBlock block={b} onHtml={onHtml} onKey={onTextKey} />
                     ) : (
                       <VisualBlock
                         block={b}

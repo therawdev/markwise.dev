@@ -10,6 +10,9 @@ Schema:
  "best":["type","type","type"]}
 Rules:
 - 3 to 12 items, drawn faithfully from the passage. Never invent facts. Use as many items as the passage genuinely contains.
+- Items must form ONE coherent set: the same kind of thing along a single dimension (all risks, all phases, all metrics, all options…). If the passage mixes kinds — e.g. risk areas plus methodology notes plus facts about the document itself — keep only the set the passage is mainly about and DROP the rest. Fewer coherent items beat more mixed ones.
+- The title says what the items collectively ARE, and no more. If the passage merely describes themes or trends of an official list without enumerating it, the title must say "themes"/"trends" — never present them as the official list itself.
+- Never repeat the title (or the passage's heading) as an item — items sit beneath the title.
 - label is the NAME of the thing itself (e.g. "Security Misconfiguration"), not a sentence fragment; what happened or why goes in detail; a compact stat or rank move like "#5 → #2" goes in value.
 - "best" = the 3 diagram types that fit this content best, most fitting first.
 - Allowed types: ${TYPES().join(',')}.
@@ -61,16 +64,46 @@ PASSAGE:
   }
 
   function fallbackSpec(text) {
-    let parts = text.split(/\n+/).map((s) => s.trim()).filter((s) => s.length > 2);
-    if (parts.length < 3) parts = text.split(SENT_SPLIT).map((s) => s.trim()).filter((s) => s.length > 2);
-    if (parts.length < 3) parts = text.split(/,| and /).map((s) => s.trim()).filter((s) => s.length > 2);
+    // a short, unpunctuated first line followed by more lines is a heading:
+    // it becomes the title and must never double as the first item
+    let title = null;
+    let body = String(text).trim();
+    const lines = body.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+    if (lines.length > 1 && lines[0].length <= 70 && lines[0].split(/\s+/).length <= 10 && !/[.!?]$/.test(lines[0])) {
+      title = cap(lines[0].replace(/[,;:\s]+$/, ''));
+      body = lines.slice(1).join('\n');
+    }
+    let parts = body.split(/\n+/).map((s) => s.trim()).filter((s) => s.length > 2);
+    if (parts.length < 3) parts = body.split(SENT_SPLIT).map((s) => s.trim()).filter((s) => s.length > 2);
+    if (parts.length < 3) parts = body.split(/,| and /).map((s) => s.trim()).filter((s) => s.length > 2);
     parts = parts.slice(0, 12);
-    if (!parts.length) parts = [text.trim() || 'Item'];
+    if (!parts.length) parts = [body || 'Item'];
     const items = parts.map((p) => {
-      const clean = p.replace(/^[\-\*\u2022\d.\)\s]+/, '').replace(/[.!?]+$/, '');
-      const { label, detail } = splitItem(clean);
+      let clean = p
+        .replace(/^[\-\*\u2022\d.\)\s]+/, '')
+        .replace(/^(first(ly)?|second(ly)?|third(ly)?|fourth(ly)?|fifth(ly)?|next|then|also|moreover|finally|lastly|in addition|additionally)[,:]\s+/i, '')
+        .replace(/[.!?]+$/, '');
+      // "the first priority should be X" / "teams should do X" \u2014 the action is the item, not the subject
+      const act = clean.match(/^.{0,60}?\b(?:priority|focus|goal|step)\s+(?:should\s+be|is|must\s+be)\s+(.+)$/i)
+        || clean.match(/^.{0,60}?\b(?:should|must|needs?\s+to|have\s+to)\s+(.+)$/i);
+      if (act) clean = act[1];
+      // label from the first sentence (before a colon if one structures it); the rest explains
+      const sents = splitSentences(clean);
+      let head = (sents[0] || clean).replace(/[.!?]+$/, '');
+      let rest = sents.slice(1).join(' ');
+      const ci = head.indexOf(':');
+      if (ci > 8 && ci < 64) {
+        rest = head.slice(ci + 1).trim() + (rest ? ' ' + rest : '');
+        head = head.slice(0, ci);
+      }
+      const { label, detail } = splitItem(head);
+      let det = detail ? detail + (rest ? ' \u2014 ' + rest : '') : (rest || null);
+      if (det) {
+        const dw = det.replace(/^\W+/, '').split(/\s+/);
+        det = cap(dw.length > 16 ? dw.slice(0, 16).join(' ') + '\u2026' : dw.join(' '));
+      }
       const vm = p.match(/[$\u20ac\u00a3]\s?\d[\d,.]*\s*[MBKmbk]?|\d+(?:\.\d+)?\s*%/);
-      return { label, detail, value: vm ? vm[0].trim() : null };
+      return { label, detail: det, value: vm ? vm[0].trim() : null };
     });
     while (items.length < 3) items.push({ label: 'Point ' + (items.length + 1), detail: null, value: null });
     const lower = text.toLowerCase();
@@ -82,7 +115,10 @@ PASSAGE:
     else if (/cycle|loop|repeat|iterat|feedback/.test(lower)) best = ['cycle', 'flow', 'mindmap'];
     else if (/step|then|first|next|finally|process/.test(lower)) best = ['flow', 'list', 'timeline'];
     else best = ['mindmap', 'list', 'flow'];
-    return { title: fallbackTitle(text), items, best, _fallback: true };
+    title = title || fallbackTitle(body);
+    // an item must never restate the title
+    const kept = items.filter((it) => it.label.trim().toLowerCase() !== title.trim().toLowerCase());
+    return { title, items: kept.length >= 3 ? kept : items, best, _fallback: true };
   }
 
   function sanitize(j, text) {
@@ -96,9 +132,12 @@ PASSAGE:
       }))
       .slice(0, 12);
     if (items.length < 3) return fallbackSpec(text);
+    // an item must never restate the title
+    const title = String(j.title || 'Untitled').trim().slice(0, 70);
+    if (items.length > 3 && items[0].label.trim().toLowerCase() === title.toLowerCase()) items = items.slice(1);
     let best = Array.isArray(j.best) ? j.best.map((b) => String(b).toLowerCase().trim()).filter((b) => TYPES().includes(b)) : [];
     if (!best.length) best = fallbackSpec(text).best;
-    return { title: String(j.title || 'Untitled').trim().slice(0, 70), items, best: best.slice(0, 3) };
+    return { title, items, best: best.slice(0, 3) };
   }
 
   // ---------- slide bullet condensing (deck view + PPTX export) ----------
@@ -127,7 +166,7 @@ PASSAGE:
     return paras.some((p) => p.length > 110 || splitSentences(p).length > 1);
   }
 
-  const BULLETS_PROMPT = (title, paras) => `You rewrite slide body text as crisp presentation bullet points.
+  const BULLETS_PROMPT = (title, paras, remarks) => `You rewrite slide body text as crisp presentation bullet points.
 Respond with ONLY valid JSON. No markdown fences, no commentary.
 Schema: {"bullets":["short bullet", ...]}
 Rules:
@@ -136,41 +175,47 @@ Rules:
 - Keep all numbers, dates, and proper names exactly as written.
 - If one sentence packs several facts, split them into separate bullets.
 - Cover the whole text — do not drop the later sentences.
-- No trailing punctuation.
+- No trailing punctuation.${remarks ? `
+- The presenter left remarks — follow them as long as they do not require inventing facts:
+"""${String(remarks).slice(0, 500)}"""` : ''}
 SLIDE TITLE: ${title || 'Untitled'}
 TEXT:
 """${(paras || []).join('\n').slice(0, 2400)}"""`;
 
-  async function condense(title, paras) {
-    if (!(window.claude && window.claude.complete)) return fallbackBullets(paras);
+  async function condense(title, paras, remarks) {
+    // fallback results are marked so callers can skip caching them and retry later
+    const fb = () => { const a = fallbackBullets(paras); a._fallback = true; return a; };
+    if (!(window.claude && window.claude.complete)) return fb();
     try {
-      const raw = await window.claude.complete(BULLETS_PROMPT(title, paras));
+      const raw = await window.claude.complete(BULLETS_PROMPT(title, paras, remarks));
       const m = String(raw).match(/\{[\s\S]*\}/);
-      if (!m) return fallbackBullets(paras);
+      if (!m) return fb();
       const j = JSON.parse(m[0]);
       const bullets = (Array.isArray(j.bullets) ? j.bullets : [])
         .map((b) => trimBullet(String(b || ''), 110))
         .filter((b) => b.length > 1)
         .slice(0, 6);
-      if (bullets.length < 2) return fallbackBullets(paras);
+      if (bullets.length < 2) return fb();
       return bullets;
     } catch (e) {
       console.warn('Glyph AI bullets fallback:', e);
-      return fallbackBullets(paras);
+      return fb();
     }
   }
 
-  const SUB_PROMPT = (text) => `You shorten a slide subtitle.
+  const SUB_PROMPT = (text, remarks) => `You shorten a slide subtitle.
 Respond with ONLY valid JSON. No markdown fences.
 Schema: {"sub":"one sentence"}
-Rules: one faithful sentence, maximum 24 words, keep numbers and dates exactly, never invent facts.
+Rules: one faithful sentence, maximum 24 words, keep numbers and dates exactly, never invent facts.${remarks ? `
+The presenter left remarks — follow them as long as they do not require inventing facts:
+"""${String(remarks).slice(0, 500)}"""` : ''}
 TEXT:
 """${String(text).slice(0, 1200)}"""`;
 
-  async function condenseSub(text) {
+  async function condenseSub(text, remarks) {
     if (!(window.claude && window.claude.complete)) return trimBullet(text, 200);
     try {
-      const raw = await window.claude.complete(SUB_PROMPT(text));
+      const raw = await window.claude.complete(SUB_PROMPT(text, remarks));
       const m = String(raw).match(/\{[\s\S]*\}/);
       const s = m ? String((JSON.parse(m[0]) || {}).sub || '').trim() : '';
       return s && s.length <= 260 ? s : trimBullet(text, 200);

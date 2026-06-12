@@ -35,7 +35,7 @@
 
   // ---------- text block (uncontrolled contenteditable) ----------
   const TextBlock = React.memo(
-    function TextBlock({ block, onHtml }) {
+    function TextBlock({ block, onHtml, onKey }) {
       const ref = useRef(null);
       useEffect(() => {
         if (ref.current && ref.current.innerHTML !== block.html) ref.current.innerHTML = block.html;
@@ -50,6 +50,7 @@
         spellCheck: false,
         ref,
         onInput: (e) => onHtml(block.id, e.currentTarget.innerHTML),
+        onKeyDown: (e) => onKey && onKey(block.id, e),
       });
     },
     (a, b) => a.block.id === b.block.id && a.block.tag === b.block.tag

@@ -83,6 +83,11 @@
     if (!slides.length || slides[0].kind !== 'title') {
       slides.unshift({ kind: 'title', title: docTitle, sub: null });
     }
+    // fixed frame: intro → agenda → content… → thank you
+    // (the agenda's entries are filled live from the content slide titles)
+    const sections = slides.filter((s) => s.kind === 'content');
+    if (sections.length > 1) slides.splice(1, 0, { kind: 'agenda', title: 'Agenda', paras: [], visual: null });
+    slides.push({ kind: 'thanks', title: 'Thank you', sub: docTitle, visual: null });
     return slides;
   }
 
@@ -90,14 +95,14 @@
   function Slide({ slide, theme, w, flip, pageNo, total, docTitle, layout }) {
     const v = themeVars(theme);
     const s = w / 1280;
-    const isTitle = slide.kind === 'title';
-    const L = !isTitle && layout && window.GlyphDeckLayouts ? window.GlyphDeckLayouts.byId[layout] : null;
+    const isTitle = slide.kind === 'title' || slide.kind === 'thanks';
+    const L = !isTitle && slide.kind !== 'agenda' && layout && window.GlyphDeckLayouts ? window.GlyphDeckLayouts.byId[layout] : null;
     const inv = !!(L && L.conf.invert);
     const bg = isTitle && v.titleBg ? v.titleBg : inv ? v.accent : v.bg;
     const fg = isTitle && v.titleBg ? '#ffffff' : v.fg;
     const sub = isTitle && v.titleBg ? 'rgba(255,255,255,0.82)' : v.sub;
     const accent = isTitle && v.titleBg ? '#ffffff' : v.accent;
-    const paras = (slide.paras || []).slice(0, 6);
+    const paras = (slide.paras || []).filter((p) => String(p).trim()).slice(0, slide.kind === 'agenda' ? 10 : 6);
     const split = slide.visual && paras.length > 0;
     const cols = [];
     if (paras.length) cols.push('text');
@@ -178,7 +183,7 @@
     for (let i = 0; i < slides.length; i++) {
       const sl = slides[i];
       const s = P.addSlide();
-      const isTitle = sl.kind === 'title';
+      const isTitle = sl.kind === 'title' || sl.kind === 'thanks';
       const bg = isTitle && v.titleBg ? v.titleBg : v.bg;
       const fg = isTitle && v.titleBg ? 'FFFFFF' : toHex(v.fg);
       s.background = { color: toHex(bg) };
@@ -195,7 +200,7 @@
         const titleY = v.look === 'minimal' || v.look === 'dark' ? 0.48 : 0.35;
         s.addText(sl.title, { x: 0.6, y: titleY, w: 8.8, h: 0.7, fontSize: 24, bold: true, color: fg, fontFace: serif ? 'Georgia' : 'Helvetica' });
         if (serif) s.addShape('rect', { x: 0.62, y: titleY + 0.78, w: 0.8, h: 0.025, fill: { color: toHex(v.accent) } });
-        const paras = (sl.paras || []).slice(0, 6);
+        const paras = (sl.paras || []).filter((p) => String(p).trim()).slice(0, sl.kind === 'agenda' ? 10 : 6);
         const hasVis = !!sl.visual;
         const flip = !!sl._flip && hasVis && paras.length > 0;
         const textX = flip ? 5.8 : 0.6;
@@ -243,6 +248,12 @@
     const [aiOn, setAiOn] = useState(() => localStorage.getItem('glyph-deck-ai') !== '0');
     const [aiBusy, setAiBusy] = useState(false);
     const [distilled, setDistilled] = useState({});
+    // build flow: generating → per-slide review (editable, remarks, regenerate) → deck
+    const [phase, setPhase] = useState('gen');
+    const [revIdx, setRevIdx] = useState(0);
+    const [edited, setEdited] = useState({});   // oi → {title, paras, sub} user overrides
+    const [remarks, setRemarks] = useState({}); // oi → free-text remarks fed to regeneration
+    const [regenOi, setRegenOi] = useState(null);
     const [pickOpen, setPickOpen] = useState(false);
     const [layoutOpen, setLayoutOpen] = useState(false);
     const [layCat, setLayCat] = useState('essentials');
@@ -255,10 +266,22 @@
     const theme = THEMES.find((t) => t.id === themeId) || THEMES[0];
 
     const ordered = order && order.length === baseSlides.length ? order : baseSlides.map((_, i) => i);
+    // the agenda lists the content slides in their current order, with title edits applied
+    const agendaParas = ordered
+      .map((oi) => ({ oi, b: baseSlides[oi] }))
+      .filter((x) => x.b.kind === 'content')
+      .map((x, n) => (n + 1) + '.  ' + ((edited[x.oi] || {}).title != null ? edited[x.oi].title : x.b.title));
     const slides = ordered.map((oi, si) => {
       const base = baseSlides[oi];
       const d = aiOn && distilled[oi] && distilled[oi].key === slideKey(base) ? distilled[oi] : {};
-      return { ...base, paras: d.paras || base.paras, sub: d.sub || base.sub, _oi: oi, _si: si, _skip: !!(ov[oi] || {}).skip, _flip: !!(ov[oi] || {}).flip, _layout: (ov[oi] || {}).layout || null };
+      const e = edited[oi] || {};
+      return {
+        ...base,
+        title: e.title != null ? e.title : base.title,
+        paras: base.kind === 'agenda' ? agendaParas : (e.paras || d.paras || base.paras),
+        sub: e.sub != null ? e.sub : (d.sub || base.sub),
+        _oi: oi, _si: si, _skip: !!(ov[oi] || {}).skip, _flip: !!(ov[oi] || {}).flip, _layout: (ov[oi] || {}).layout || null,
+      };
     });
     const live = slides.filter((s) => !s._skip);
     const pageOf = {};
@@ -266,20 +289,22 @@
     const cur = Math.min(idx, slides.length - 1);
     const curSlide = slides[cur];
 
-    useEffect(() => { setOrder(null); setOv({}); setDistilled({}); }, [baseSlides.length]);
+    useEffect(() => { setOrder(null); setOv({}); setDistilled({}); setEdited({}); setRemarks({}); setRevIdx(0); }, [baseSlides.length]);
     useEffect(() => { localStorage.setItem('glyph-deck-theme', themeId); }, [themeId]);
     useEffect(() => { localStorage.setItem('glyph-deck-ai', aiOn ? '1' : '0'); }, [aiOn]);
 
-    // Condense long / multi-sentence slide text into presentation bullets via AI
+    // Condense long / multi-sentence slide text into presentation bullets via AI,
+    // then move the build flow from "generating" to "review"
     useEffect(() => {
-      if (!aiOn || !window.GlyphAI) return;
+      const toReview = () => setPhase((p) => (p === 'gen' ? 'review' : p));
+      if (!aiOn || !window.GlyphAI) { toReview(); return; }
       let dead = false;
       const need = [];
       baseSlides.forEach((sl, oi) => {
         if (sl.kind === 'content' && window.GlyphAI.needsCondense(sl.paras)) need.push({ oi, type: 'paras' });
         if (sl.kind === 'title' && sl.sub && sl.sub.length > 200) need.push({ oi, type: 'sub' });
       });
-      if (!need.length) return;
+      if (!need.length) { toReview(); return; }
       setAiBusy(true);
       Promise.all(need.map(async (n) => {
         const sl = baseSlides[n.oi];
@@ -290,8 +315,9 @@
             : window.GlyphAI.condenseSub(sl.sub);
         }
         const val = await condenseCache[key];
+        if (val && val._fallback) delete condenseCache[key]; // don't cache fallbacks — retry on next open
         if (!dead) setDistilled((prev) => ({ ...prev, [n.oi]: { ...(prev[n.oi] || {}), key: slideKey(sl), [n.type]: val } }));
-      })).finally(() => { if (!dead) setAiBusy(false); });
+      })).finally(() => { if (!dead) { setAiBusy(false); toReview(); } });
       return () => { dead = true; };
     }, [aiOn, baseSlides]);
     useEffect(() => { localStorage.setItem('glyph-deck-idx', String(cur)); }, [cur]);
@@ -306,6 +332,33 @@
     };
     const toggleOv = (oi, key) => setOv((prev) => ({ ...prev, [oi]: { ...(prev[oi] || {}), [key]: !(prev[oi] || {})[key] } }));
 
+    // ----- build flow: review state -----
+    const reviewSlides = slides.filter((s) => s.kind === 'title' || s.kind === 'content');
+    const rev = reviewSlides[Math.min(revIdx, reviewSlides.length - 1)];
+    const patchEdit = (oi, patch) => setEdited((prev) => ({ ...prev, [oi]: { ...(prev[oi] || {}), ...patch } }));
+    const regen = async (sl) => {
+      if (!window.GlyphAI || regenOi != null) return;
+      const base = baseSlides[sl._oi];
+      const note = (remarks[sl._oi] || '').trim();
+      setRegenOi(sl._oi);
+      try {
+        if (base.kind === 'content' && (base.paras || []).length) {
+          const bullets = await window.GlyphAI.condense(sl.title, base.paras, note);
+          patchEdit(sl._oi, { paras: bullets.slice() });
+        } else if (base.kind === 'title' && base.sub) {
+          const s2 = await window.GlyphAI.condenseSub(base.sub, note);
+          patchEdit(sl._oi, { sub: s2 });
+        }
+      } finally {
+        setRegenOi(null);
+      }
+    };
+    // generation progress: content slides that need AI condensing
+    const genRows = baseSlides
+      .map((sl, oi) => ({ sl, oi }))
+      .filter((x) => x.sl.kind === 'content');
+    const genNeeded = window.GlyphAI ? genRows.filter((x) => window.GlyphAI.needsCondense(x.sl.paras)) : [];
+
     useEffect(() => {
       function measure() {
         if (stageRef.current) setStageW(Math.min(stageRef.current.clientWidth - 56, 1100));
@@ -313,17 +366,18 @@
       measure();
       window.addEventListener('resize', measure);
       return () => window.removeEventListener('resize', measure);
-    }, [present]);
+    }, [present, phase]);
 
     useEffect(() => {
       const k = (e) => {
         if (e.key === 'Escape') { if (present) setPresent(false); else if (pickOpen || layoutOpen) { setPickOpen(false); setLayoutOpen(false); } else onClose(); }
+        if (phase !== 'deck' && !present) return; // arrows must not fight the review-form inputs
         if (e.key === 'ArrowRight' || e.key === 'PageDown') setIdx((i) => Math.min(i + 1, slides.length - 1));
         if (e.key === 'ArrowLeft' || e.key === 'PageUp') setIdx((i) => Math.max(i - 1, 0));
       };
       window.addEventListener('keydown', k);
       return () => window.removeEventListener('keydown', k);
-    }, [present, pickOpen, layoutOpen, slides.length, onClose]);
+    }, [present, pickOpen, layoutOpen, slides.length, onClose, phase]);
 
     const doExport = async () => {
       setBusy(true);
@@ -371,12 +425,19 @@
             <span className="deck-meta">{live.length} slides · {theme.name}{aiBusy ? ' · ✦ condensing…' : ''}</span>
           </div>
           <div className="deck-actions">
-            <button className={'ghost-btn sm' + (aiOn ? ' ai-on' : '')} title="Rewrite long slide text as short AI bullet points (also used for PPTX & PDF export)" onClick={() => setAiOn(!aiOn)}>✦ AI bullets: {aiOn ? 'on' : 'off'}</button>
-            <button className="ghost-btn sm" onClick={() => { setPickOpen(false); setLayoutOpen(!layoutOpen); }}>▦ Layouts</button>
-            <button className="ghost-btn sm" onClick={() => { setLayoutOpen(false); setPickOpen(!pickOpen); }}>🎨 Theme</button>
-            <button className="ghost-btn sm" onClick={doPrint}>⎙ PDF</button>
-            <button className="ghost-btn sm" onClick={doExport} disabled={busy}>{busy ? 'Exporting…' : '↓ PPTX'}</button>
-            <button className="primary-btn" onClick={() => setPresent(true)}>▶ Present</button>
+            {phase === 'deck' ? (
+              <React.Fragment>
+                <button className={'ghost-btn sm' + (aiOn ? ' ai-on' : '')} title="Rewrite long slide text as short AI bullet points (also used for PPTX & PDF export)" onClick={() => setAiOn(!aiOn)}>✦ AI bullets: {aiOn ? 'on' : 'off'}</button>
+                <button className="ghost-btn sm" onClick={() => setPhase('review')}>✎ Review slides</button>
+                <button className="ghost-btn sm" onClick={() => { setPickOpen(false); setLayoutOpen(!layoutOpen); }}>▦ Layouts</button>
+                <button className="ghost-btn sm" onClick={() => { setLayoutOpen(false); setPickOpen(!pickOpen); }}>🎨 Theme</button>
+                <button className="ghost-btn sm" onClick={doPrint}>⎙ PDF</button>
+                <button className="ghost-btn sm" onClick={doExport} disabled={busy}>{busy ? 'Exporting…' : '↓ PPTX'}</button>
+                <button className="primary-btn" onClick={() => setPresent(true)}>▶ Present</button>
+              </React.Fragment>
+            ) : (
+              <button className="ghost-btn sm" onClick={() => setPhase('deck')}>Skip to deck →</button>
+            )}
             <button className="icon-btn" onClick={onClose} aria-label="Close deck">✕</button>
           </div>
         </div>
@@ -441,6 +502,78 @@
             </div>
           </div>
         ) : null}
+        {phase === 'gen' ? (
+          <div className="deck-gen">
+            <div className="deck-gen-card">
+              <div className="gen-head"><span className="gen-spinner"></span><b>Generating your presentation…</b></div>
+              <div className="gen-sub">
+                Intro → agenda → {genRows.length} section slide{genRows.length === 1 ? '' : 's'} → thank you.
+                {genNeeded.length ? ' Long sections are rewritten as crisp AI bullets.' : ''}
+              </div>
+              <div className="gen-list">
+                {genRows.map(({ sl, oi }) => {
+                  const needed = window.GlyphAI && window.GlyphAI.needsCondense(sl.paras);
+                  const done = !needed || !!(distilled[oi] && distilled[oi].paras);
+                  return (
+                    <div key={oi} className={'gen-row' + (done ? ' done' : '')}>
+                      <span className="gen-dot">{done ? '✓' : ''}</span>
+                      <span className="gen-name">{sl.title}</span>
+                      {sl.visual ? <span className="gen-vis" title="This section's diagram goes on the slide">⬡ diagram</span> : null}
+                    </div>
+                  );
+                })}
+              </div>
+              <button className="ghost-btn sm" onClick={() => setPhase('review')}>Skip →</button>
+            </div>
+          </div>
+        ) : phase === 'review' && rev ? (
+          <div className="deck-review">
+            <div className="rev-stage" ref={stageRef}>
+              <Slide slide={rev} theme={theme} w={Math.min(stageW, 780)} flip={rev._flip} layout={rev._layout} docTitle={docTitle} />
+              {rev.visual ? <div className="rev-vis-note">⬡ This section's diagram is on the slide and exports with it</div> : null}
+            </div>
+            <div className="rev-form">
+              <div className="rev-kind">Slide {revIdx + 1} of {reviewSlides.length} · {rev.kind === 'title' ? 'Intro' : 'Section'}</div>
+              <label>Title</label>
+              <input value={rev.title} onChange={(e) => patchEdit(rev._oi, { title: e.target.value })} />
+              {rev.kind === 'title' ? (
+                <React.Fragment>
+                  <label>Subtitle</label>
+                  <textarea rows={3} value={rev.sub || ''} onChange={(e) => patchEdit(rev._oi, { sub: e.target.value })} />
+                </React.Fragment>
+              ) : (
+                <React.Fragment>
+                  <label>Bullets — one per line</label>
+                  <textarea rows={8} value={(rev.paras || []).join('\n')} onChange={(e) => patchEdit(rev._oi, { paras: e.target.value.split('\n') })} />
+                </React.Fragment>
+              )}
+              <details className="rev-remarks" open={!!(remarks[rev._oi] || '').length}>
+                <summary>Remarks for the AI (optional)</summary>
+                <textarea
+                  rows={3}
+                  placeholder="e.g. focus on the dates · punchier wording · max 4 bullets"
+                  value={remarks[rev._oi] || ''}
+                  onChange={(e) => setRemarks((p) => ({ ...p, [rev._oi]: e.target.value }))}
+                />
+              </details>
+              <div className="rev-actions">
+                <button
+                  className="ghost-btn sm"
+                  disabled={regenOi != null || (rev.kind === 'content' ? !(baseSlides[rev._oi].paras || []).length : !baseSlides[rev._oi].sub)}
+                  title="Rewrite this slide's text with AI, applying your remarks"
+                  onClick={() => regen(rev)}
+                >{regenOi === rev._oi ? '✦ Regenerating…' : '✦ Regenerate'}</button>
+              </div>
+              <div className="rev-nav">
+                <button className="secondary-btn" disabled={revIdx === 0} onClick={() => setRevIdx(revIdx - 1)}>← Prev</button>
+                <span className="deck-meta">{revIdx + 1} / {reviewSlides.length}</span>
+                {revIdx < reviewSlides.length - 1
+                  ? <button className="secondary-btn" onClick={() => setRevIdx(revIdx + 1)}>Next →</button>
+                  : <button className="primary-btn" onClick={() => setPhase('deck')}>Build deck →</button>}
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="deck-main">
           <div className="deck-rail" ref={railRef}>
             {slides.map((sl, i) => (
@@ -470,6 +603,7 @@
             </div>
           </div>
         </div>
+        )}
         {printing ? (
           <div className="deck-print">
             {live.map((sl, k) => (

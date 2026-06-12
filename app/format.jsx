@@ -7,6 +7,21 @@
   function FormatBar({ fab, onVisualize, onTag }) {
     if (!fab) return null;
     const x = Math.min(Math.max(fab.x, 170), window.innerWidth - 170);
+    if (fab.multi) {
+      return (
+        <div className="fmtbar" style={{ left: x, top: Math.max(fab.y, 70) }} onMouseDown={(e) => e.preventDefault()}>
+          <span className="fmt-count">{fab.multi} blocks</span>
+          {fab.canViz ? (
+            <React.Fragment>
+              <span className="fmt-sep"></span>
+              <button className="fmt-viz" onMouseDown={(e) => e.preventDefault()} onClick={onVisualize}>
+                <span className="fab-spark">✦</span> Visualize
+              </button>
+            </React.Fragment>
+          ) : null}
+        </div>
+      );
+    }
     const exec = (cmd, val) => (e) => {
       e.preventDefault();
       document.execCommand(cmd, false, val || null);

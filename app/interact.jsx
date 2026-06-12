@@ -42,6 +42,7 @@
     const [boxes, setBoxes] = useState([]);       // px boxes of selected elements
     const [liveSc, setLiveSc] = useState(null);   // live scale factor while corner-dragging
     const [mq, setMq] = useState(null);           // marquee rect {x0,y0,x1,y1}
+    const [inline, setInline] = useState(null);   // { d, field, box, fontPx } — in-place text editing
     const layout = visual.layout || {};
     const sel = sels.length === 1 ? sels[0] : null;
     const isSel = (d) => sels.some((x) => dkey(x) === dkey(d));
@@ -85,7 +86,46 @@
       out = { h: 120, el: [<text key="e" x={24} y={60} fontSize={14} fill="#a33">Could not render this layout</text>] };
     }
 
-    useEffect(() => { setSels([]); setPop(null); }, [visual.id]);
+    useEffect(() => { setSels([]); setPop(null); setInline(null); }, [visual.id]);
+
+    // edit a text in place: an input overlays the text's exact spot in the diagram
+    const beginInline = (d) => {
+      if (!editable || !onPatch) return;
+      let field = null;
+      if (d.kind === 'sub' && ['label', 'detail', 'value'].indexOf(d.sub) !== -1) field = d.sub;
+      else if (d.kind === 'item' || (d.kind === 'gfx' && d.i != null)) field = 'label';
+      else if (d.kind === 'note') field = 'text';
+      const svg = svgRef.current;
+      if (!field || !svg) { setSels([d]); setPop('text'); return; }
+      const q = d.kind === 'sub' ? `[data-sub="${d.i}:${d.sub}"]`
+        : d.kind === 'item' ? `g[data-it="${d.i}"]`
+        : d.kind === 'gfx' ? `g[data-gfx="${CSS.escape(d.key)}"]`
+        : `g[data-note="${d.id}"]`;
+      const el = svg.querySelector(q);
+      if (!el) { setSels([d]); setPop('text'); return; }
+      const wr = svg.parentElement.getBoundingClientRect();
+      const er = el.getBoundingClientRect();
+      let fontPx = 13;
+      try {
+        const tEl = el.tagName === 'text' ? el : el.querySelector('text');
+        if (tEl) fontPx = Math.max(11, Math.min(26, parseFloat(getComputedStyle(tEl).fontSize) || 13));
+      } catch (e) { /* keep default */ }
+      setSels([d]);
+      setPop(null);
+      setInline({ d, field, box: { x: er.x - wr.x, y: er.y - wr.y, w: er.width, h: er.height }, fontPx });
+    };
+    const inlineValue = !inline ? ''
+      : inline.d.kind === 'note' ? (((visual.notes || []).find((n) => n.id === inline.d.id) || {}).text || '')
+      : (((visual.spec.items || [])[inline.d.i] || {})[inline.field] || '');
+    const setInlineValue = (v) => {
+      if (!inline || !onPatch) return;
+      if (inline.d.kind === 'note') {
+        onPatch({ notes: (visual.notes || []).map((n) => (n.id === inline.d.id ? { ...n, text: v } : n)) });
+      } else {
+        const idx = inline.d.i;
+        onPatch({ spec: { ...visual.spec, items: (visual.spec.items || []).map((x, k) => (k === idx ? { ...x, [inline.field]: inline.field === 'label' ? v : (v || null) } : x)) } });
+      }
+    };
 
     // measure all selected elements
     useEffect(() => {
@@ -116,6 +156,12 @@
       if (!editable) return;
       e.stopPropagation();
       if (draggedRef.current) return;
+      // clicking a text that is already the single selection starts in-place editing
+      if (!e.shiftKey && sels.length === 1 && dkey(sels[0]) === dkey(desc) && (desc.kind === 'sub' || desc.kind === 'note')) {
+        beginInline(desc);
+        return;
+      }
+      setInline(null);
       setPop(null);
       setSels((cur) => {
         if (e.shiftKey && cur.length) {
@@ -221,6 +267,7 @@
             style: Object.assign({}, node.props.style, editable ? { cursor: 'move', paintOrder: moved ? 'stroke' : undefined, stroke: moved ? 'rgba(255,255,255,0.85)' : undefined, strokeWidth: moved ? 3 : undefined } : null),
             onPointerDown: (e) => startDrag(e, desc),
             onClick: (e) => pick(e, desc),
+            onDoubleClick: (e) => { e.stopPropagation(); beginInline(desc); },
           });
           return ssc !== 1 ? <g key={'ssw' + i + sub} style={{ transformBox: 'fill-box', transformOrigin: 'center', transform: `scale(${ssc})` }}>{cloned}</g> : cloned;
         }
@@ -252,6 +299,7 @@
             style={editable ? { cursor: 'grab' } : undefined}
             onPointerDown={(e) => startDrag(e, desc)}
             onClick={(e) => pick(e, desc)}
+            onDoubleClick={(e) => { e.stopPropagation(); beginInline(desc); }}
           >
             {sc !== 1 ? <g style={{ transformBox: 'fill-box', transformOrigin: 'center', transform: `scale(${sc})` }}>{inner}</g> : inner}
           </g>
@@ -353,6 +401,7 @@
           style={editable ? { cursor: 'move' } : undefined}
           onPointerDown={(e) => startDrag(e, desc)}
           onClick={(e) => pick(e, desc)}
+          onDoubleClick={(e) => { e.stopPropagation(); beginInline(desc); }}
         >
           <text x={0} y={0} fontFamily={D.F} fontSize={size} fontWeight={600} fill={c} style={{ paintOrder: 'stroke', stroke: 'rgba(255,255,255,0.9)', strokeWidth: 3.5 }}>
             {lines.map((l, k) => (
@@ -512,6 +561,12 @@
         if (Math.abs(ev.clientX - sx) >= 2 || Math.abs(ev.clientY - sy) >= 2) return;
         // no movement: treat as a click on whatever is under the pointer
         const d = descFromPoint(ev.clientX, ev.clientY);
+        // a second still click on the already-selected text edits it in place
+        if (d && !shift && sels.length === 1 && dkey(sels[0]) === dkey(d) && (d.kind === 'sub' || d.kind === 'note')) {
+          beginInline(d);
+          return;
+        }
+        setInline(null);
         setPop(null);
         setSels((cur) => {
           if (!d) return [];
@@ -670,7 +725,7 @@
             {canResize ? <i className="dg-rs" title="Drag to resize" onPointerDown={startScaleDrag}></i> : <i></i>}
           </div>
         ) : null}
-        {editable && anySel ? (
+        {editable && anySel && !inline ? (
           <div
             className="dg-float"
             style={{ left: floatLeft, top: Math.max(4, uby - 44) }}
@@ -694,6 +749,29 @@
             </div>
             {popEl ? <div className="dg-pop">{popEl}</div> : null}
           </div>
+        ) : null}
+        {editable && inline ? (
+          <input
+            className="dg-inline-edit"
+            style={{
+              left: Math.max(2, inline.box.x - 6),
+              top: inline.box.y + inline.box.h / 2,
+              minWidth: Math.max(inline.box.w + 26, 120),
+              fontSize: inline.fontPx,
+            }}
+            autoFocus
+            value={inlineValue}
+            placeholder={inline.field}
+            onFocus={(e) => e.target.select()}
+            onChange={(e) => setInlineValue(e.target.value)}
+            onBlur={() => setInline(null)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); setInline(null); }
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          />
         ) : null}
       </div>
     );
