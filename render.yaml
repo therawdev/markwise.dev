@@ -1,0 +1,33 @@
+# Render blueprint: web service (Docker) + managed PostgreSQL.
+# Deploy: Render dashboard → New → Blueprint → point at this repo.
+# After the first deploy, set the two sync:false secrets in the dashboard:
+#   APP_OWNER_PASSWORD — seeded admin password (seed runs on boot, idempotent)
+#   CODEX_AUTH_JSON    — contents of ~/.codex/auth.json from `codex login`
+#                        (ChatGPT-subscription auth, no API key; rotate by
+#                        re-running `codex login` and updating this var)
+services:
+  - type: web
+    name: markwise
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: markwise-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: APP_OWNER_EMAIL
+        value: admin@markwise.dev
+      - key: APP_OWNER_PASSWORD
+        sync: false
+      - key: AI_PROVIDER
+        value: codex
+      - key: CODEX_AUTH_JSON
+        sync: false
+
+databases:
+  - name: markwise-db
+    plan: basic-256mb
+    postgresMajorVersion: '16'

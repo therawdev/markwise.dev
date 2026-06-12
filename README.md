@@ -25,6 +25,25 @@ npm run dev            # → http://localhost:3000
 Sign in at `http://localhost:3000/login.html`. The dashboard lives at `/docs.html`,
 the org settings at `/org.html?id=…`, and the owner panel at `/admin.html`.
 
+### Run with Docker
+
+```bash
+# App + PostgreSQL in one command. Optional: export CODEX_AUTH_JSON / APP_OWNER_PASSWORD first.
+docker compose up --build   # → http://localhost:3000
+```
+
+The image runs migrations and the seed on boot (both idempotent) and restores
+Codex CLI credentials from the `CODEX_AUTH_JSON` env var (the contents of
+`~/.codex/auth.json` after a `codex login` on any machine).
+
+### Deploy on Render
+
+[render.yaml](render.yaml) is a Render blueprint: a Docker web service plus
+managed PostgreSQL. Create a Blueprint in the Render dashboard, point it at
+this repo, and set the two secrets it asks for: `APP_OWNER_PASSWORD` (seeded
+admin) and `CODEX_AUTH_JSON` (Codex CLI auth — rotate anytime by re-running
+`codex login` and updating the var).
+
 ## Features
 
 - **Editor** — write a doc, select text, hit ✦ Visualize; pick from live diagram
