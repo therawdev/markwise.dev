@@ -28,16 +28,15 @@
     },
 
     /** Require a signed-in user; redirect to login otherwise.
-     *  Invite links land on signup instead — invitees are usually new users
-     *  (signup's "Sign in" link carries the invite through for existing ones). */
+     *  Invite links get their own landing page that shows the company and
+     *  role before asking for an account. */
     async requireUser() {
       const user = await API.me();
       if (!user) {
-        const next = encodeURIComponent(location.pathname + location.search);
         const invite = new URLSearchParams(location.search).get('invite');
         location.href = invite
-          ? '/signup.html?invite=' + encodeURIComponent(invite) + '&next=' + next
-          : '/login.html?next=' + next;
+          ? '/invite.html?token=' + encodeURIComponent(invite)
+          : '/login.html?next=' + encodeURIComponent(location.pathname + location.search);
         return null;
       }
       return user;

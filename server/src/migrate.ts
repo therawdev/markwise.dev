@@ -110,6 +110,37 @@ async function migrate() {
     });
   }
 
+  // Notification bell: events newer than this timestamp count as unread
+  if (!(await db.schema.hasColumn('users', 'notif_seen_at'))) {
+    await db.schema.alterTable('users', (t) => {
+      t.timestamp('notif_seen_at');
+    });
+  }
+
+  // Starred flag for documents
+  if (!(await db.schema.hasColumn('documents', 'starred'))) {
+    await db.schema.alterTable('documents', (t) => {
+      t.boolean('starred').notNullable().defaultTo(false);
+    });
+  }
+
+  // Soft-delete support for documents (null = live, non-null = in trash)
+  if (!(await db.schema.hasColumn('documents', 'deleted_at'))) {
+    await db.schema.alterTable('documents', (t) => {
+      t.timestamp('deleted_at');
+    });
+  }
+
+  // API keys for programmatic access
+  if (!(await has('api_keys'))) {
+    await db.schema.createTable('api_keys', (t) => {
+      t.increments('id');
+      t.integer('user_id').notNullable().references('users.id').onDelete('CASCADE');
+      t.string('token').notNullable().unique();
+      t.timestamp('created_at').defaultTo(db.fn.now());
+    });
+  }
+
   console.log('Migrations complete.');
   await db.destroy();
 }

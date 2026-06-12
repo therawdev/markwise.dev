@@ -8,6 +8,7 @@ import { orgsRouter } from './routes/orgs.js';
 import { docsRouter } from './routes/docs.js';
 import { aiRouter } from './routes/ai.js';
 import { adminRouter } from './routes/admin.js';
+import { getSetting } from './db.js';
 import { sharedRouter } from './routes/shared.js';
 
 const app = express();
@@ -33,6 +34,14 @@ app.use('/api/admin', adminRouter);
 app.use('/api/shared', sharedRouter);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
+// Public platform flags (signup gate, maintenance banner)
+app.get('/api/platform', async (_req, res) => {
+  res.json({
+    allow_signups: (await getSetting<boolean>('allow_signups', true)) !== false,
+    maintenance: (await getSetting<boolean>('maintenance', false)) === true,
+  });
+});
 
 // Static frontend: the Markwise app lives at the repo root.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

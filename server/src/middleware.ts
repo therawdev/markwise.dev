@@ -16,18 +16,20 @@ declare global {
   namespace Express {
     interface Request {
       user?: AuthedUser;
+      impersonatedBy?: number;
     }
   }
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const token = req.cookies?.[COOKIE];
-  const uid = token ? verifyToken(token) : null;
-  if (!uid) return res.status(401).json({ error: 'Not signed in' });
-  const user = await db('users').where({ id: uid }).first();
+  const payload = token ? verifyToken(token) : null;
+  if (!payload) return res.status(401).json({ error: 'Not signed in' });
+  const user = await db('users').where({ id: payload.uid }).first();
   if (!user) return res.status(401).json({ error: 'Not signed in' });
   if (user.status !== 'active') return res.status(403).json({ error: 'Account suspended' });
   req.user = user;
+  if (payload.imp) req.impersonatedBy = payload.imp;
   next();
 }
 

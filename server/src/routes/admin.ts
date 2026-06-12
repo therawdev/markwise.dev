@@ -1,10 +1,23 @@
 import { Router } from 'express';
-import { db, setSetting, audit } from '../db.js';
+import { db, setSetting, getSetting, audit } from '../db.js';
 import { requireAuth, requireAppOwner } from '../middleware.js';
+import { setAuthCookie } from '../auth.js';
 import { PROVIDERS, providerStatus } from '../providers/index.js';
 
 export const adminRouter = Router();
-adminRouter.use(requireAuth, requireAppOwner);
+adminRouter.use(requireAuth);
+
+// Leaving impersonation must work for the *impersonated* (non-owner) user,
+// so it sits before the app-owner guard.
+adminRouter.post('/impersonate/stop', async (req, res) => {
+  if (!req.impersonatedBy) return res.status(400).json({ error: 'Not impersonating anyone' });
+  const owner = await db('users').where({ id: req.impersonatedBy, is_app_owner: true }).first();
+  if (!owner) return res.status(400).json({ error: 'Original admin session not found' });
+  setAuthCookie(res, owner.id);
+  res.json({ ok: true });
+});
+
+adminRouter.use(requireAppOwner);
 
 adminRouter.get('/stats', async (_req, res) => {
   const [users] = await db('users').count('* as n');
@@ -25,6 +38,48 @@ adminRouter.get('/users', async (_req, res) => {
     .select('id', 'email', 'name', 'is_app_owner', 'status', 'created_at')
     .orderBy('id');
   res.json(users);
+});
+
+// ---- impersonation: browse Markwise as another (active, non-owner) user ----
+adminRouter.post('/impersonate/:id', async (req, res) => {
+  const target = await db('users').where({ id: Number(req.params.id) }).first();
+  if (!target) return res.status(404).json({ error: 'User not found' });
+  if (target.is_app_owner) return res.status(400).json({ error: 'Cannot impersonate the app owner' });
+  if (target.status !== 'active') return res.status(400).json({ error: 'User is suspended' });
+  setAuthCookie(res, target.id, req.user!.id);
+  await audit(req.user!.id, 'admin.impersonate', `user:${target.id}`, { email: target.email });
+  res.json({ ok: true });
+});
+
+// ---- platform flags: public signups + maintenance banner ----
+adminRouter.get('/platform', async (_req, res) => {
+  res.json({
+    allow_signups: (await getSetting<boolean>('allow_signups', true)) !== false,
+    maintenance: (await getSetting<boolean>('maintenance', false)) === true,
+  });
+});
+adminRouter.put('/platform', async (req, res) => {
+  const updates: Record<string, boolean> = {};
+  for (const key of ['allow_signups', 'maintenance'] as const) {
+    if (typeof req.body?.[key] === 'boolean') updates[key] = req.body[key];
+  }
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'Nothing to update' });
+  for (const [key, value] of Object.entries(updates)) {
+    await setSetting(key, value);
+    await audit(req.user!.id, 'admin.platform', 'settings', { [key]: value });
+  }
+  res.json({ ok: true });
+});
+
+// ---- daily AI call counts for the overview chart ----
+adminRouter.get('/ai-usage-daily', async (_req, res) => {
+  const rows = await db('ai_usage')
+    .where('created_at', '>=', db.raw("now() - interval '14 days'"))
+    .select(db.raw('date(created_at) as day'))
+    .count('* as n')
+    .groupByRaw('date(created_at)')
+    .orderBy('day');
+  res.json(rows.map((r: any) => ({ day: r.day, n: Number(r.n) })));
 });
 
 adminRouter.put('/users/:id/status', async (req, res) => {

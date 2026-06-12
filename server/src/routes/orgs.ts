@@ -6,6 +6,27 @@ import { requireAuth, hasPermission } from '../middleware.js';
 import { DEFAULT_ROLES, PERMISSIONS, isValidPermissionList } from '../permissions.js';
 
 export const orgsRouter = Router();
+
+// Public: what an invite link points at, for the invite landing page.
+// No auth — the viewer typically has no account yet. Exposes only company
+// name + role + state, nothing else.
+orgsRouter.get('/invites/:token/info', async (req, res) => {
+  const invite = await db('invites').where({ token: req.params.token }).first();
+  if (!invite) return res.status(404).json({ error: 'Invite not found' });
+  const company = await db('companies').where({ id: invite.company_id }).first();
+  const role = await db('roles').where({ id: invite.role_id }).first();
+  const usedBy = invite.used_by ? await db('users').where({ id: invite.used_by }).first() : null;
+  const state = invite.used_by ? 'used' : new Date(invite.expires_at) < new Date() ? 'expired' : 'active';
+  res.json({
+    company: company ? company.name : null,
+    company_id: invite.company_id,
+    role: role ? role.name : null,
+    state,
+    used_by_email: usedBy ? usedBy.email : null,
+    expires_at: invite.expires_at,
+  });
+});
+
 orgsRouter.use(requireAuth);
 
 function slugify(name: string): string {
@@ -247,6 +268,98 @@ orgsRouter.delete('/:id/invites/:inviteId', async (req, res) => {
     state: invite.used_by ? 'used' : new Date(invite.expires_at) < new Date() ? 'expired' : 'active',
   });
   res.json({ ok: true });
+});
+
+// ---- company activity: the audit trail scoped to one company ----
+orgsRouter.get('/:id/activity', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await hasPermission(req.user!, companyId, 'doc:view')) && !req.user!.is_app_owner) {
+    return res.status(403).json({ error: 'Not a member of this company' });
+  }
+  const logs = await db('audit_logs')
+    .leftJoin('users', 'users.id', 'audit_logs.actor_id')
+    .where('audit_logs.target', `company:${companyId}`)
+    .orWhere('audit_logs.detail', '@>', JSON.stringify({ company_id: companyId }))
+    .orderBy('audit_logs.id', 'desc')
+    .limit(200)
+    .select('audit_logs.*', 'users.email as actor_email');
+  res.json(logs);
+});
+
+// ---- company: rename ----
+orgsRouter.put('/:id', async (req, res) => {
+  const companyId = Number(req.params.id);
+  const company = await db('companies').where({ id: companyId }).first();
+  if (!company) return res.status(404).json({ error: 'Company not found' });
+  if (!req.user!.is_app_owner && !(await hasPermission(req.user!, companyId, 'org:settings'))) {
+    return res.status(403).json({ error: 'You need the company settings permission' });
+  }
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Company name required' });
+  await db('companies').where({ id: companyId }).update({ name });
+  await audit(req.user!.id, 'company.update', `company:${companyId}`, { name });
+  res.json({ ok: true });
+});
+
+// ---- company: delete ----
+orgsRouter.delete('/:id', async (req, res) => {
+  const companyId = Number(req.params.id);
+  const company = await db('companies').where({ id: companyId }).first();
+  if (!company) return res.status(404).json({ error: 'Company not found' });
+  if (!req.user!.is_app_owner && !(await hasPermission(req.user!, companyId, 'org:settings'))) {
+    return res.status(403).json({ error: 'You need the company settings permission' });
+  }
+  const companyName = company.name;
+  await db.transaction(async (trx) => {
+    // Docs become personal (company_id = null)
+    await trx('documents').where({ company_id: companyId }).update({ company_id: null });
+    // Memberships, invites, roles cascade via DB ON DELETE CASCADE (or explicit)
+    await trx('memberships').where({ company_id: companyId }).delete();
+    await trx('invites').where({ company_id: companyId }).delete();
+    await trx('roles').where({ company_id: companyId }).delete();
+    await trx('companies').where({ id: companyId }).delete();
+  });
+  await audit(req.user!.id, 'company.delete', `company:${companyId}`, { name: companyName });
+  res.json({ ok: true });
+});
+
+// ---- company: update plan ----
+orgsRouter.put('/:id/plan', async (req, res) => {
+  const companyId = Number(req.params.id);
+  const company = await db('companies').where({ id: companyId }).first();
+  if (!company) return res.status(404).json({ error: 'Company not found' });
+  if (!req.user!.is_app_owner && !(await hasPermission(req.user!, companyId, 'org:billing'))) {
+    return res.status(403).json({ error: 'You need the billing permission' });
+  }
+  const plan = String(req.body?.plan || '').trim();
+  if (plan !== 'free' && plan !== 'pro') return res.status(400).json({ error: 'Plan must be free or pro' });
+  await db('companies').where({ id: companyId }).update({ plan });
+  await audit(req.user!.id, 'billing.update', `company:${companyId}`, { plan });
+  res.json({ ok: true });
+});
+
+// ---- company: usage ----
+orgsRouter.get('/:id/usage', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await hasPermission(req.user!, companyId, 'doc:view')) && !req.user!.is_app_owner) {
+    return res.status(403).json({ error: 'Not a member of this company' });
+  }
+  const docsCount = await db('documents')
+    .where({ company_id: companyId })
+    .whereNull('deleted_at')
+    .count('id as count')
+    .first();
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const aiCount = await db('ai_usage')
+    .where({ company_id: companyId })
+    .where('created_at', '>=', monthStart)
+    .count('id as count')
+    .first();
+  res.json({
+    docs: Number((docsCount as any)?.count ?? 0),
+    ai_month: Number((aiCount as any)?.count ?? 0),
+  });
 });
 
 // Accept an invite (any signed-in user).

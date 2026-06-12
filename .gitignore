@@ -4,3 +4,5 @@ dist/
 *.log
 .creds.txt
 .omc/
+improve_ui_pages.zip
+.design/

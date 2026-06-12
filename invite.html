@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join a team — Markwise</title>
+<link rel="stylesheet" href="assets/account.css">
+</head>
+<body>
+<div class="auth-stage" data-screen-label="Invite">
+  <div class="auth-inner">
+    <div class="auth-brand">
+      <span class="brand-mark"></span>
+      <span class="brand-name">Markwise</span>
+    </div>
+    <div class="auth-card" id="card">
+      <h1 class="auth-title">Checking your invite…</h1>
+    </div>
+  </div>
+</div>
+<script src="app/api.js"></script>
+<script>
+(async function () {
+  const card = document.getElementById('card');
+  const esc = (s) => { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; };
+  const params = new URLSearchParams(location.search);
+  const token = params.get('token') || params.get('invite');
+
+  const dead = (title, sub) => {
+    card.innerHTML = '<h1 class="auth-title">' + esc(title) + '</h1><p class="auth-sub">' + esc(sub) + '</p>' +
+      '<a class="secondary-btn as-link" href="login.html">Go to sign in</a>';
+  };
+  if (!token) { dead('Invite not found', 'This invite link is missing its token.'); return; }
+
+  let info;
+  try { info = await MarkwiseAPI.get('/api/orgs/invites/' + encodeURIComponent(token) + '/info'); }
+  catch (e) { dead('Invite not found', 'This invite link is invalid or was deleted.'); return; }
+
+  if (info.state === 'used') {
+    dead('Invite already used', 'This invite link was already used' + (info.used_by_email ? ' by ' + info.used_by_email : '') + '. Ask for a new one.');
+    return;
+  }
+  if (info.state === 'expired') {
+    dead('Invite expired', 'Invite links expire after 7 days. Ask for a new one.');
+    return;
+  }
+
+  const me = await MarkwiseAPI.me();
+
+  if (me) {
+    const already = (me.memberships || []).some((m) => m.company_id === info.company_id);
+    card.innerHTML =
+      '<h1 class="auth-title">Join ' + esc(info.company) + '</h1>' +
+      '<p class="auth-sub">You’ve been invited to join <b>' + esc(info.company) + '</b> as <b>' + esc(info.role) + '</b> (signed in as ' + esc(me.email) + ').</p>' +
+      (already
+        ? '<div class="form-error neutral">You’re already a member of this company.</div>' +
+          '<a class="secondary-btn as-link" href="org.html?id=' + info.company_id + '">Open company settings</a>'
+        : '<button class="primary-btn auth-submit" id="join">Join ' + esc(info.company) + ' as ' + esc(info.role) + '</button>');
+    const joinBtn = card.querySelector('#join');
+    if (joinBtn) joinBtn.onclick = async () => {
+      try {
+        await MarkwiseAPI.post('/api/orgs/invites/' + encodeURIComponent(token) + '/accept');
+        location.href = '/docs.html';
+      } catch (e) {
+        card.insertAdjacentHTML('beforeend', '<div class="form-error">' + esc(e.message) + '</div>');
+      }
+    };
+    return;
+  }
+
+  card.innerHTML =
+    '<h1 class="auth-title">Join ' + esc(info.company) + '</h1>' +
+    '<p class="auth-sub">You’ve been invited to join <b>' + esc(info.company) + '</b> as <b>' + esc(info.role) + '</b>. Create your account to accept.</p>' +
+    '<form id="form">' +
+      '<label class="fld-label" for="name">Name</label>' +
+      '<input class="fld" id="name" autocomplete="name" placeholder="Your name" autofocus required>' +
+      '<label class="fld-label" for="email">Email</label>' +
+      '<input class="fld" id="email" type="email" autocomplete="email" placeholder="you@company.com" required>' +
+      '<label class="fld-label" for="password">Password</label>' +
+      '<input class="fld" id="password" type="password" autocomplete="new-password" minlength="8" placeholder="At least 8 characters" required>' +
+      '<div class="form-error" id="error" style="display:none"></div>' +
+      '<button class="primary-btn auth-submit" type="submit">Create account &amp; join</button>' +
+    '</form>' +
+    '<div class="auth-alt">Already have an account? <a href="login.html?next=' + encodeURIComponent('/invite.html?token=' + token) + '">Sign in</a> — you’ll come back here.</div>';
+
+  const form = card.querySelector('#form');
+  const errEl = card.querySelector('#error');
+  form.addEventListener('input', () => { errEl.style.display = 'none'; });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await MarkwiseAPI.post('/api/auth/signup', {
+        name: card.querySelector('#name').value.trim(),
+        email: card.querySelector('#email').value.trim(),
+        password: card.querySelector('#password').value,
+        invite_token: token,
+      });
+      location.href = '/docs.html';
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = '';
+    }
+  });
+})();
+</script>
+</body>
+</html>
