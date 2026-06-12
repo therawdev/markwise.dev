@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Company — Markwise</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/docs.html"><span class="brand-mark"></span><span class="brand-name">Markwise</span></a>
+  <div class="topbar-right">
+    <a class="ghost-btn" href="/docs.html">← Documents</a>
+    <button class="avatar" id="avatar" title="Sign out"></button>
+  </div>
+</header>
+
+<div class="page">
+  <div class="page-head"><h1 id="orgName">Company</h1><span class="badge" id="myRole"></span></div>
+
+  <div class="section">
+    <h2>Members</h2>
+    <table class="mw" id="membersTable">
+      <thead><tr><th>Name</th><th>Email</th><th>Role</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="card" style="margin-top:14px" id="inviteCard">
+      <b style="font-size:13.5px">Invite a teammate</b>
+      <div class="inline-form" style="margin-top:10px">
+        <select class="fld" id="inviteRole"></select>
+        <button class="secondary-btn" id="makeInvite">Generate invite link</button>
+      </div>
+      <div class="inline-form" id="inviteOut" style="margin-top:10px;display:none">
+        <input class="fld" id="inviteUrl" readonly style="max-width:480px">
+        <button class="ghost-btn" id="copyInvite">Copy</button>
+        <span class="muted">Valid for 7 days, single use.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Roles &amp; permissions</h2>
+    <p class="muted">Default roles (Owner, User) are built in. Create custom roles with exactly the permissions you want.</p>
+    <div id="roles"></div>
+    <div class="card" style="margin-top:14px" id="newRoleCard">
+      <b style="font-size:13.5px">New custom role</b>
+      <div class="inline-form" style="margin-top:10px">
+        <input class="fld" id="newRoleName" placeholder="Role name (e.g. Editor, Viewer)" style="max-width:280px">
+      </div>
+      <div class="perm-grid" id="newRolePerms"></div>
+      <button class="primary-btn" id="createRole">Create role</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" style="display:none"></div>
+
+<script src="app/api.js"></script>
+<script>
+(async function () {
+  const user = await MarkwiseAPI.requireUser();
+  if (!user) return;
+  document.getElementById('avatar').textContent = (user.name || 'U').charAt(0).toUpperCase();
+  document.getElementById('avatar').onclick = () => { if (confirm('Sign out?')) MarkwiseAPI.logout(); };
+
+  const orgId = Number(new URLSearchParams(location.search).get('id'));
+  if (!orgId) { location.href = '/docs.html'; return; }
+
+  const PERMS = await MarkwiseAPI.get('/api/orgs/permissions');
+  let org;
+  try { org = await MarkwiseAPI.get('/api/orgs/' + orgId); }
+  catch (e) { alert(e.message); location.href = '/docs.html'; return; }
+
+  const mine = (user.memberships || []).find((m) => m.company_id === orgId);
+  const myPerms = new Set(user.is_app_owner ? PERMS.map((p) => p.key) : (mine ? mine.permissions : []));
+  const canMembers = myPerms.has('org:manage_members');
+  const canRoles = myPerms.has('org:manage_roles');
+
+  document.getElementById('orgName').textContent = org.name;
+  document.getElementById('myRole').textContent = user.is_app_owner ? 'App owner' : (mine ? mine.role : '');
+  if (!canMembers) document.getElementById('inviteCard').style.display = 'none';
+  if (!canRoles) document.getElementById('newRoleCard').style.display = 'none';
+
+  // ---- members ----
+  const tbody = document.querySelector('#membersTable tbody');
+  org.members.forEach((m) => {
+    const tr = document.createElement('tr');
+    const roleCell = canMembers && m.id !== user.id
+      ? '<select class="fld role-sel" data-user="' + m.id + '">' +
+          org.roles.map((r) => '<option value="' + r.id + '"' + (r.id === m.role_id ? ' selected' : '') + '>' + esc(r.name) + '</option>').join('') +
+        '</select>'
+      : '<span class="badge">' + esc(m.role) + '</span>';
+    tr.innerHTML = '<td>' + esc(m.name) + (m.id === user.id ? ' <span class="muted">(you)</span>' : '') + '</td>' +
+      '<td>' + esc(m.email) + '</td><td>' + roleCell + '</td>' +
+      '<td>' + (canMembers && m.id !== user.id ? '<button class="danger-btn rm" data-user="' + m.id + '">Remove</button>' : '') + '</td>';
+    tbody.appendChild(tr);
+  });
+  tbody.addEventListener('change', async (e) => {
+    if (!e.target.classList.contains('role-sel')) return;
+    try {
+      await MarkwiseAPI.put('/api/orgs/' + orgId + '/members/' + e.target.dataset.user, { role_id: Number(e.target.value) });
+      toast('Role updated');
+    } catch (err) { toast(err.message); }
+  });
+  tbody.addEventListener('click', async (e) => {
+    if (!e.target.classList.contains('rm')) return;
+    if (!confirm('Remove this member from the company?')) return;
+    try { await MarkwiseAPI.del('/api/orgs/' + orgId + '/members/' + e.target.dataset.user); location.reload(); }
+    catch (err) { toast(err.message); }
+  });
+
+  // ---- invites ----
+  const inviteRole = document.getElementById('inviteRole');
+  org.roles.forEach((r) => {
+    const o = document.createElement('option');
+    o.value = r.id; o.textContent = r.name;
+    if (r.name === 'User') o.selected = true;
+    inviteRole.appendChild(o);
+  });
+  document.getElementById('makeInvite').onclick = async () => {
+    try {
+      const inv = await MarkwiseAPI.post('/api/orgs/' + orgId + '/invites', { role_id: Number(inviteRole.value) });
+      const url = location.origin + '/docs.html?invite=' + inv.token;
+      document.getElementById('inviteUrl').value = url;
+      document.getElementById('inviteOut').style.display = '';
+    } catch (e) { toast(e.message); }
+  };
+  document.getElementById('copyInvite').onclick = () => {
+    navigator.clipboard.writeText(document.getElementById('inviteUrl').value).then(() => toast('Copied'));
+  };
+
+  // ---- roles ----
+  const rolesEl = document.getElementById('roles');
+  org.roles.forEach((r) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const locked = r.is_system && r.name === 'Owner';
+    const editable = canRoles && !locked;
+    card.innerHTML =
+      '<div style="display:flex;align-items:center;gap:10px">' +
+        '<b>' + esc(r.name) + '</b>' +
+        (r.is_system ? '<span class="badge">Default</span>' : '<span class="badge ok">Custom</span>') +
+        (editable ? '<button class="ghost-btn save-role" style="margin-left:auto" data-role="' + r.id + '">Save changes</button>' : '') +
+        (canRoles && !r.is_system ? '<button class="danger-btn del-role" data-role="' + r.id + '">Delete</button>' : '') +
+      '</div>' +
+      '<div class="perm-grid">' +
+        PERMS.map((p) =>
+          '<label><input type="checkbox" data-role="' + r.id + '" value="' + p.key + '"' +
+          (r.permissions.includes(p.key) ? ' checked' : '') + (editable ? '' : ' disabled') + '> ' + esc(p.label) + '</label>'
+        ).join('') +
+      '</div>' +
+      (locked ? '<p class="muted">The Owner role always holds every permission.</p>' : '');
+    rolesEl.appendChild(card);
+  });
+  rolesEl.addEventListener('click', async (e) => {
+    const roleId = e.target.dataset && e.target.dataset.role;
+    if (e.target.classList.contains('save-role')) {
+      const perms = [...rolesEl.querySelectorAll('input[data-role="' + roleId + '"]:checked')].map((i) => i.value);
+      try { await MarkwiseAPI.put('/api/orgs/' + orgId + '/roles/' + roleId, { permissions: perms }); toast('Role saved'); }
+      catch (err) { toast(err.message); }
+    } else if (e.target.classList.contains('del-role')) {
+      if (!confirm('Delete this role?')) return;
+      try { await MarkwiseAPI.del('/api/orgs/' + orgId + '/roles/' + roleId); location.reload(); }
+      catch (err) { toast(err.message); }
+    }
+  });
+
+  // ---- new role ----
+  const newPerms = document.getElementById('newRolePerms');
+  PERMS.forEach((p) => {
+    const lb = document.createElement('label');
+    lb.innerHTML = '<input type="checkbox" value="' + p.key + '"' + (p.key.startsWith('doc:') ? ' checked' : '') + '> ' + esc(p.label);
+    newPerms.appendChild(lb);
+  });
+  document.getElementById('createRole').onclick = async () => {
+    const name = document.getElementById('newRoleName').value.trim();
+    const permissions = [...newPerms.querySelectorAll('input:checked')].map((i) => i.value);
+    if (!name) return toast('Role needs a name');
+    try { await MarkwiseAPI.post('/api/orgs/' + orgId + '/roles', { name, permissions }); location.reload(); }
+    catch (e) { toast(e.message); }
+  };
+
+  function esc(s) { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.style.display = '';
+    setTimeout(() => { t.style.display = 'none'; }, 2600);
+  }
+})();
+</script>
+</body>
+</html>

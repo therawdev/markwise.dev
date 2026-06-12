@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin — Markwise</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/docs.html"><span class="brand-mark"></span><span class="brand-name">Markwise</span></a>
+  <span class="badge">Admin panel</span>
+  <div class="topbar-right">
+    <a class="ghost-btn" href="/docs.html">← Documents</a>
+    <button class="avatar" id="avatar" title="Sign out"></button>
+  </div>
+</header>
+
+<div class="page">
+  <div class="page-head"><h1>Application owner panel</h1></div>
+
+  <div class="stat-row" id="stats"></div>
+
+  <div class="section">
+    <h2>AI provider</h2>
+    <div class="card" id="providers"></div>
+    <div class="card" id="claudeToggle" style="margin-top:14px">
+      <label style="display:flex;gap:10px;align-items:center;font-size:13.5px;cursor:pointer">
+        <input type="checkbox" id="claudeEnabled" style="accent-color:var(--accent);width:16px;height:16px">
+        <b>Enable Claude SDK / Claude API</b>
+        <span class="muted">Disabled for this session. Enabling also requires ANTHROPIC_API_KEY on the server.</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Users</h2>
+    <table class="mw" id="usersTable">
+      <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Type</th><th>Status</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Companies</h2>
+    <table class="mw" id="orgsTable">
+      <thead><tr><th>ID</th><th>Name</th><th>Plan</th><th>Members</th><th>Status</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Audit log</h2>
+    <table class="mw" id="auditTable">
+      <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+<div class="toast" id="toast" style="display:none"></div>
+
+<script src="app/api.js"></script>
+<script>
+(async function () {
+  const user = await MarkwiseAPI.requireUser();
+  if (!user) return;
+  if (!user.is_app_owner) { location.href = '/docs.html'; return; }
+  document.getElementById('avatar').textContent = (user.name || 'A').charAt(0).toUpperCase();
+  document.getElementById('avatar').onclick = () => { if (confirm('Sign out?')) MarkwiseAPI.logout(); };
+
+  async function refresh() {
+    const s = await MarkwiseAPI.get('/api/admin/stats');
+    document.getElementById('stats').innerHTML =
+      stat(s.users, 'Users') + stat(s.companies, 'Companies') + stat(s.documents, 'Documents') + stat(s.ai_calls, 'AI calls');
+
+    const prov = document.getElementById('providers');
+    prov.innerHTML = s.ai.providers.map((p) =>
+      '<div class="provider-row">' +
+        '<input type="radio" name="prov" value="' + p.id + '"' + (p.active ? ' checked' : '') + (p.ok ? '' : ' disabled') + '>' +
+        '<b>' + esc(p.label) + '</b>' +
+        (p.active ? '<span class="badge ok">Active</span>' : '') +
+        (p.ok ? '' : '<span class="badge warn">Unavailable</span>') +
+        '<span class="muted">' + esc(p.reason || '') + '</span>' +
+      '</div>'
+    ).join('');
+    prov.querySelectorAll('input[name="prov"]').forEach((r) => {
+      r.onchange = async () => {
+        try { await MarkwiseAPI.put('/api/admin/ai-provider', { provider: r.value }); toast('Provider switched to ' + r.value); refresh(); }
+        catch (e) { toast(e.message); refresh(); }
+      };
+    });
+  }
+  await refresh();
+
+  document.getElementById('claudeEnabled').onchange = async (e) => {
+    try {
+      await MarkwiseAPI.put('/api/admin/claude-enabled', { enabled: e.target.checked });
+      toast(e.target.checked ? 'Claude API enabled' : 'Claude API disabled');
+      refresh();
+    } catch (err) { toast(err.message); }
+  };
+
+  // users
+  const users = await MarkwiseAPI.get('/api/admin/users');
+  document.querySelector('#usersTable tbody').innerHTML = users.map((u) =>
+    '<tr><td>' + u.id + '</td><td>' + esc(u.name) + '</td><td>' + esc(u.email) + '</td>' +
+    '<td>' + (u.is_app_owner ? '<span class="badge">App owner</span>' : 'User') + '</td>' +
+    '<td>' + (u.status === 'active' ? '<span class="badge ok">Active</span>' : '<span class="badge warn">Suspended</span>') + '</td>' +
+    '<td>' + (u.is_app_owner ? '' :
+      '<button class="' + (u.status === 'active' ? 'danger-btn' : 'secondary-btn') + ' u-status" data-id="' + u.id + '" data-status="' +
+      (u.status === 'active' ? 'suspended' : 'active') + '">' + (u.status === 'active' ? 'Suspend' : 'Activate') + '</button>') + '</td></tr>'
+  ).join('');
+  document.querySelector('#usersTable').addEventListener('click', async (e) => {
+    if (!e.target.classList.contains('u-status')) return;
+    try { await MarkwiseAPI.put('/api/admin/users/' + e.target.dataset.id + '/status', { status: e.target.dataset.status }); location.reload(); }
+    catch (err) { toast(err.message); }
+  });
+
+  // companies
+  const orgs = await MarkwiseAPI.get('/api/admin/companies');
+  document.querySelector('#orgsTable tbody').innerHTML = orgs.map((c) =>
+    '<tr><td>' + c.id + '</td><td>' + esc(c.name) + '</td><td>' + esc(c.plan) + '</td><td>' + c.member_count + '</td>' +
+    '<td>' + (c.status === 'active' ? '<span class="badge ok">Active</span>' : '<span class="badge warn">Suspended</span>') + '</td>' +
+    '<td><button class="' + (c.status === 'active' ? 'danger-btn' : 'secondary-btn') + ' c-status" data-id="' + c.id + '" data-status="' +
+    (c.status === 'active' ? 'suspended' : 'active') + '">' + (c.status === 'active' ? 'Suspend' : 'Activate') + '</button></td></tr>'
+  ).join('') || '<tr><td colspan="6" class="muted">No companies yet</td></tr>';
+  document.querySelector('#orgsTable').addEventListener('click', async (e) => {
+    if (!e.target.classList.contains('c-status')) return;
+    try { await MarkwiseAPI.put('/api/admin/companies/' + e.target.dataset.id + '/status', { status: e.target.dataset.status }); location.reload(); }
+    catch (err) { toast(err.message); }
+  });
+
+  // audit
+  const logs = await MarkwiseAPI.get('/api/admin/audit?limit=100');
+  document.querySelector('#auditTable tbody').innerHTML = logs.map((l) =>
+    '<tr><td>' + new Date(l.created_at).toLocaleString() + '</td><td>' + esc(l.actor_email || '—') + '</td>' +
+    '<td>' + esc(l.action) + '</td><td class="muted">' + esc(l.target) + '</td></tr>'
+  ).join('') || '<tr><td colspan="4" class="muted">No activity yet</td></tr>';
+
+  function stat(n, label) { return '<div class="stat"><b>' + n + '</b><span>' + label + '</span></div>'; }
+  function esc(s) { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.style.display = '';
+    setTimeout(() => { t.style.display = 'none'; }, 2600);
+  }
+})();
+</script>
+</body>
+</html>

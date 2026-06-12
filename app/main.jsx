@@ -9,7 +9,6 @@
   const { Canvas } = window.GlyphCanvas;
   const { galleryBlocks } = window.GlyphGallery;
 
-  const LS_DOC = 'glyph-doc-v1';
   const LS_HINT = 'glyph-hint-dismissed-v1';
   const uid = () => 'v' + Math.random().toString(36).slice(2, 9);
 
@@ -29,16 +28,12 @@
     return groups.filter((g) => g.block ? (g.block.textContent || '').trim() : g.nodes.some((n) => (n.textContent || '').trim()));
   }
 
-  function loadDoc() {
-    try {
-      const s = JSON.parse(localStorage.getItem(LS_DOC));
-      if (s && Array.isArray(s.blocks) && s.blocks.length) return s;
-    } catch (e) { /* ignore */ }
-    return { title: 'Orbit 2.0 Launch Plan', blocks: sampleBlocks() };
-  }
-
-  function App() {
-    const initial = useRef(loadDoc());
+  function App({ boot }) {
+    const docId = boot.doc.id;
+    const initial = useRef({
+      title: boot.doc.title,
+      blocks: Array.isArray(boot.doc.blocks) && boot.doc.blocks.length ? boot.doc.blocks : sampleBlocks(),
+    });
     const [docTitle, setDocTitle] = useState(initial.current.title);
     const [blocks, setBlocks] = useState(initial.current.blocks);
     const [fab, setFab] = useState(null);
@@ -59,13 +54,22 @@
     const pickerRef = useRef(null);
     pickerRef.current = picker;
 
-    // ----- persistence (debounced) -----
+    // ----- persistence (debounced, to the API) -----
     const saveT = useRef(null);
+    const firstSave = useRef(true);
+    const [saveState, setSaveState] = useState('saved');
     useEffect(() => {
+      if (firstSave.current) { firstSave.current = false; return; }
+      setSaveState('saving');
       clearTimeout(saveT.current);
-      saveT.current = setTimeout(() => {
-        try { localStorage.setItem(LS_DOC, JSON.stringify({ title: docTitle, blocks })); } catch (e) { /* full */ }
-      }, 400);
+      saveT.current = setTimeout(async () => {
+        try {
+          await window.MarkwiseAPI.saveDoc(docId, { title: docTitle, blocks });
+          setSaveState('saved');
+        } catch (e) {
+          setSaveState('error');
+        }
+      }, 600);
       return () => clearTimeout(saveT.current);
     }, [blocks, docTitle]);
 
@@ -246,17 +250,15 @@
       toast('Visual regenerated');
     }
 
-    function resetDoc() {
+    async function resetDoc() {
       if (!window.confirm('Reset the document to the sample launch plan? Your edits will be lost.')) return;
-      const fresh = { title: 'Orbit 2.0 Launch Plan', blocks: sampleBlocks() };
-      localStorage.setItem(LS_DOC, JSON.stringify(fresh));
+      await window.MarkwiseAPI.saveDoc(docId, { title: 'Orbit 2.0 Launch Plan', blocks: sampleBlocks() });
       window.location.reload();
     }
 
-    function loadGallery() {
+    async function loadGallery() {
       if (!window.confirm('Replace the current document with the visual type gallery? Your edits will be lost.')) return;
-      const fresh = { title: 'Markwise Visual Gallery', blocks: galleryBlocks() };
-      localStorage.setItem(LS_DOC, JSON.stringify(fresh));
+      await window.MarkwiseAPI.saveDoc(docId, { title: 'Markwise Visual Gallery', blocks: galleryBlocks() });
       window.location.reload();
     }
 
@@ -272,10 +274,10 @@
     return (
       <div className="app" data-screen-label="Markwise editor">
         <header className="topbar">
-          <div className="brand">
+          <a className="brand" href="/docs.html" title="Back to your documents" style={{ textDecoration: 'none', color: 'inherit' }}>
             <span className="brand-mark"></span>
             <span className="brand-name">Markwise</span>
-          </div>
+          </a>
           <input
             className="doc-title"
             value={docTitle}
@@ -287,13 +289,24 @@
             <button className={space === 'canvas' ? 'on' : ''} onClick={() => setSpace('canvas')}>Canvas</button>
           </div>
           <div className="topbar-right">
+            <span style={{ fontSize: 11.5, color: saveState === 'error' ? '#b3422f' : 'var(--grey)' }}>
+              {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save failed' : 'Saved'}
+            </span>
             <button className="ghost-btn sm" onClick={undo} title="Undo last change (⌘Z)">↺ Undo</button>
             <button className="ghost-btn sm" onClick={loadGallery} title="Load a document showcasing one example of every visual type">Gallery</button>
             <button className="ghost-btn sm" onClick={resetDoc} title="Restore the sample document">Reset</button>
             <button className="secondary-btn" onClick={() => setDocExport(true)}>Export</button>
             <button className="secondary-btn" onClick={() => setDeck(true)}>▶ Present</button>
             <button className="primary-btn" onClick={() => setShare(true)}>Share</button>
-            <div className="avatar">A</div>
+            {boot.user.is_app_owner ? <a className="ghost-btn sm" href="/admin.html" style={{ textDecoration: 'none' }}>Admin</a> : null}
+            <div
+              className="avatar"
+              title={boot.user.email + ' — click to sign out'}
+              style={{ cursor: 'pointer' }}
+              onClick={() => { if (window.confirm('Sign out of Markwise?')) window.MarkwiseAPI.logout(); }}
+            >
+              {(boot.user.name || 'U').charAt(0).toUpperCase()}
+            </div>
           </div>
         </header>
 
@@ -372,5 +385,9 @@
     );
   }
 
-  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  (async () => {
+    const boot = await window.MarkwiseAPI.boot();
+    if (!boot) return; // redirected to login or docs
+    ReactDOM.createRoot(document.getElementById('root')).render(<App boot={boot} />);
+  })();
 })();

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documents — Markwise</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/docs.html"><span class="brand-mark"></span><span class="brand-name">Markwise</span></a>
+  <div class="topbar-right">
+    <span class="muted" id="who"></span>
+    <a class="ghost-btn" id="adminLink" href="/admin.html" style="display:none">Admin</a>
+    <button class="avatar" id="avatar" title="Sign out"></button>
+  </div>
+</header>
+
+<div class="page">
+  <div class="page-head">
+    <h1>Your documents</h1>
+    <div class="inline-form">
+      <select class="fld" id="newDocOrg"><option value="">Personal</option></select>
+      <button class="primary-btn" id="newDoc">+ New document</button>
+    </div>
+  </div>
+
+  <div class="doc-grid" id="grid"></div>
+  <p class="muted" id="empty" style="display:none">No documents yet — create your first one above. Select any text inside it and hit ✦ Visualize.</p>
+
+  <div class="section">
+    <h2>Companies</h2>
+    <div id="orgs"></div>
+    <div class="inline-form" style="margin-top:12px">
+      <input class="fld" id="orgName" placeholder="New company name" style="max-width:260px">
+      <button class="secondary-btn" id="createOrg">Create company</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" style="display:none"></div>
+
+<script src="app/api.js"></script>
+<script>
+(async function () {
+  const user = await MarkwiseAPI.requireUser();
+  if (!user) return;
+
+  // invite link flow: /docs.html?invite=TOKEN
+  const invite = new URLSearchParams(location.search).get('invite');
+  if (invite) {
+    try {
+      const r = await MarkwiseAPI.post('/api/orgs/invites/' + encodeURIComponent(invite) + '/accept');
+      toast('Joined ' + r.company.name);
+    } catch (e) { toast(e.message); }
+    history.replaceState(null, '', '/docs.html');
+  }
+
+  document.getElementById('who').textContent = user.email;
+  document.getElementById('avatar').textContent = (user.name || 'U').charAt(0).toUpperCase();
+  document.getElementById('avatar').onclick = () => { if (confirm('Sign out?')) MarkwiseAPI.logout(); };
+  if (user.is_app_owner) document.getElementById('adminLink').style.display = '';
+
+  const me = await MarkwiseAPI.get('/api/auth/me');
+  const sel = document.getElementById('newDocOrg');
+  me.memberships.forEach((m) => {
+    if (!m.permissions.includes('doc:create')) return;
+    const o = document.createElement('option');
+    o.value = m.company_id;
+    o.textContent = m.company_name;
+    sel.appendChild(o);
+  });
+
+  const orgsEl = document.getElementById('orgs');
+  if (me.memberships.length) {
+    me.memberships.forEach((m) => {
+      const row = document.createElement('div');
+      row.className = 'card';
+      const canManage = m.permissions.some((p) => p.startsWith('org:'));
+      row.innerHTML = '<div style="display:flex;align-items:center;gap:12px">' +
+        '<b>' + esc(m.company_name) + '</b>' +
+        '<span class="badge">' + esc(m.role) + '</span>' +
+        (canManage ? '<a class="ghost-btn" style="margin-left:auto" href="/org.html?id=' + m.company_id + '">Manage</a>' : '') +
+        '</div>';
+      orgsEl.appendChild(row);
+    });
+  } else {
+    orgsEl.innerHTML = '<p class="muted">You are not part of a company yet. Create one to invite teammates with roles and permissions.</p>';
+  }
+
+  document.getElementById('createOrg').onclick = async () => {
+    const name = document.getElementById('orgName').value.trim();
+    if (!name) return;
+    try { await MarkwiseAPI.post('/api/orgs', { name }); location.reload(); }
+    catch (e) { toast(e.message); }
+  };
+
+  document.getElementById('newDoc').onclick = async () => {
+    try {
+      const doc = await MarkwiseAPI.post('/api/docs', {
+        title: 'Untitled',
+        company_id: sel.value ? Number(sel.value) : null,
+      });
+      location.href = '/index.html?doc=' + doc.id;
+    } catch (e) { toast(e.message); }
+  };
+
+  async function loadDocs() {
+    const docs = await MarkwiseAPI.get('/api/docs');
+    const grid = document.getElementById('grid');
+    grid.innerHTML = '';
+    document.getElementById('empty').style.display = docs.length ? 'none' : '';
+    docs.forEach((d) => {
+      const a = document.createElement('a');
+      a.className = 'doc-card';
+      a.href = '/index.html?doc=' + d.id;
+      a.innerHTML =
+        '<b>' + esc(d.title || 'Untitled') + '</b>' +
+        '<span class="muted">' + (d.company_name ? esc(d.company_name) : 'Personal') +
+        ' · ' + new Date(d.updated_at).toLocaleDateString() + '</span>' +
+        '<button class="del" title="Delete">✕</button>';
+      a.querySelector('.del').onclick = async (e) => {
+        e.preventDefault();
+        if (!confirm('Delete "' + (d.title || 'Untitled') + '"?')) return;
+        try { await MarkwiseAPI.del('/api/docs/' + d.id); loadDocs(); }
+        catch (err) { toast(err.message); }
+      };
+      grid.appendChild(a);
+    });
+  }
+  await loadDocs();
+
+  function esc(s) { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.style.display = '';
+    setTimeout(() => { t.style.display = 'none'; }, 2600);
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+import type { Request, Response, NextFunction } from 'express';
+import { db } from './db.js';
+import { COOKIE, verifyToken } from './auth.js';
+import type { PermissionKey } from './permissions.js';
+
+export interface AuthedUser {
+  id: number;
+  email: string;
+  name: string;
+  is_app_owner: boolean;
+  status: string;
+}
+
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    interface Request {
+      user?: AuthedUser;
+    }
+  }
+}
+
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const token = req.cookies?.[COOKIE];
+  const uid = token ? verifyToken(token) : null;
+  if (!uid) return res.status(401).json({ error: 'Not signed in' });
+  const user = await db('users').where({ id: uid }).first();
+  if (!user) return res.status(401).json({ error: 'Not signed in' });
+  if (user.status !== 'active') return res.status(403).json({ error: 'Account suspended' });
+  req.user = user;
+  next();
+}
+
+export function requireAppOwner(req: Request, res: Response, next: NextFunction) {
+  if (!req.user?.is_app_owner) return res.status(403).json({ error: 'App owner only' });
+  next();
+}
+
+/** Resolve the permission set a user holds inside a company. App owner gets everything implicitly. */
+export async function permissionsFor(userId: number, companyId: number): Promise<Set<string>> {
+  const row = await db('memberships')
+    .join('roles', 'roles.id', 'memberships.role_id')
+    .where({ 'memberships.user_id': userId, 'memberships.company_id': companyId })
+    .select('roles.permissions')
+    .first();
+  if (!row) return new Set();
+  const perms = typeof row.permissions === 'string' ? JSON.parse(row.permissions) : row.permissions;
+  return new Set(perms as string[]);
+}
+
+export async function hasPermission(user: AuthedUser, companyId: number, perm: PermissionKey): Promise<boolean> {
+  if (user.is_app_owner) return true;
+  return (await permissionsFor(user.id, companyId)).has(perm);
+}
+
+/**
+ * Document-level access. Personal docs (company_id null): owner only.
+ * Company docs: members holding the required permission.
+ */
+export async function canAccessDoc(
+  user: AuthedUser,
+  doc: { owner_id: number; company_id: number | null },
+  perm: PermissionKey
+): Promise<boolean> {
+  if (user.is_app_owner) return true;
+  if (doc.company_id == null) return doc.owner_id === user.id;
+  if (doc.owner_id === user.id) return true;
+  return hasPermission(user, doc.company_id, perm);
+}
