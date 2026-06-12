@@ -98,7 +98,7 @@
     const cats = window.TYPE_CATEGORIES || [];
     const D9 = window.DIAGRAMS || {};
     const blocks = [];
-    blocks.push({ id: uid(), kind: 'text', tag: 'h1', html: 'Glyph Visual Gallery' });
+    blocks.push({ id: uid(), kind: 'text', tag: 'h1', html: 'Markwise Visual Gallery' });
     blocks.push({ id: uid(), kind: 'text', tag: 'p', html: 'One worked example of every visual type. Click any visual to restyle, recolor, or switch its layout.' });
     let vi = 0;
     cats.forEach((cat) => {

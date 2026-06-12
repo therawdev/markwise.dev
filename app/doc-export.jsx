@@ -113,7 +113,7 @@
     // cover
     body += para(run('DOCUMENT', { bold: true, color: accent, size: 18, caps: true, ls: 40 }), { after: 60 });
     if (!hasH1) body += para(run(docTitle || 'Untitled document', { bold: true, size: 52, color: '211F1C' }), { after: 80, line: 240 });
-    body += para(run(today + '   ·   Made with Glyph', { color: '6F6A61', size: 20 }), { after: 60 });
+    body += para(run(today + '   ·   Made with Markwise', { color: '6F6A61', size: 20 }), { after: 60 });
     body += para('', { border: 18, borderColor: accent, after: 280 });
 
     for (const b of blocks) {
@@ -179,7 +179,7 @@
     body += `<div style="margin:0 0 36pt">
 <p style="font-size:9pt;letter-spacing:2pt;text-transform:uppercase;color:${accent};font-weight:bold;margin:0 0 6pt">Document</p>
 ${hasH1 ? '' : `<h1 style="margin:0 0 10pt">${esc(docTitle)}</h1>`}
-<p style="font-size:10pt;color:#6f6a61;margin:0">${today} &nbsp;·&nbsp; Made with Glyph</p>
+<p style="font-size:10pt;color:#6f6a61;margin:0">${today} &nbsp;·&nbsp; Made with Markwise</p>
 <p style="border-bottom:2.25pt solid ${accent};margin:14pt 0 0;font-size:1pt">&nbsp;</p>
 </div>`;
     for (const b of blocks) {
