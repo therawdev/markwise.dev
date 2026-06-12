@@ -1,4 +1,4 @@
-// Glyph — app root: state, selection handling, generation flow, persistence
+// Markwise — app root: state, selection handling, generation flow, persistence
 (function () {
   const { useState, useEffect, useRef, useCallback } = React;
   const { PickerOverlay, EditPanel, ExportModal, ShareModal } = window.GlyphPanels;
@@ -255,7 +255,7 @@
 
     function loadGallery() {
       if (!window.confirm('Replace the current document with the visual type gallery? Your edits will be lost.')) return;
-      const fresh = { title: 'Glyph Visual Gallery', blocks: galleryBlocks() };
+      const fresh = { title: 'Markwise Visual Gallery', blocks: galleryBlocks() };
       localStorage.setItem(LS_DOC, JSON.stringify(fresh));
       window.location.reload();
     }
@@ -270,11 +270,11 @@
         : b));
 
     return (
-      <div className="app" data-screen-label="Glyph editor">
+      <div className="app" data-screen-label="Markwise editor">
         <header className="topbar">
           <div className="brand">
             <span className="brand-mark"></span>
-            <span className="brand-name">Glyph</span>
+            <span className="brand-name">Markwise</span>
           </div>
           <input
             className="doc-title"
