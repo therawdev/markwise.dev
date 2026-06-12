@@ -5,6 +5,8 @@ import { execFile } from 'node:child_process';
 import type { AIProvider } from './types.js';
 
 const BIN = process.env.CLAUDE_CODE_BIN || 'claude';
+// Fast, cheap model for the app's one-shot JSON completions. Alias or full id.
+const MODEL = process.env.CLAUDE_CODE_MODEL || 'haiku';
 
 function run(args: string[], input?: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -34,7 +36,7 @@ export const claudeCodeProvider: AIProvider = {
 
   async complete(prompt: string): Promise<string> {
     // Prompt goes via stdin to avoid argv length limits and shell-quoting issues.
-    const out = await run(['-p', '--output-format', 'json'], prompt);
+    const out = await run(['-p', '--output-format', 'json', '--model', MODEL], prompt);
     const parsed = JSON.parse(out);
     if (parsed.is_error) throw new Error(`Claude Code error: ${parsed.result || 'unknown'}`);
     return String(parsed.result || '');

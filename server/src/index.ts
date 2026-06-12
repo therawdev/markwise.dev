@@ -37,7 +37,15 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 // Static frontend: the Markwise app lives at the repo root.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(__dirname, '../..');
-app.use(express.static(webRoot, { index: 'index.html', extensions: ['html'] }));
+app.use(express.static(webRoot, {
+  index: 'index.html',
+  extensions: ['html'],
+  setHeaders(res, filePath) {
+    // HTML and the buildless JS/JSX modules must always revalidate, or users
+    // keep interacting with yesterday's UI after a deploy.
+    if (/\.(html|js|jsx)$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
 
 const port = Number(process.env.PORT) || 3000;
 app.listen(port, () => console.log(`Markwise running at http://localhost:${port}`));

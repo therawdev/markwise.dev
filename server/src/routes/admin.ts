@@ -31,8 +31,13 @@ adminRouter.put('/users/:id/status', async (req, res) => {
   const userId = Number(req.params.id);
   const status = req.body?.status === 'suspended' ? 'suspended' : 'active';
   if (userId === req.user!.id) return res.status(400).json({ error: 'You cannot suspend yourself' });
+  const target = await db('users').where({ id: userId }).first();
+  if (!target) return res.status(404).json({ error: 'User not found' });
   await db('users').where({ id: userId }).update({ status });
-  await audit(req.user!.id, 'admin.user_status', `user:${userId}`, { status });
+  await audit(req.user!.id, 'admin.user_status', `user:${userId}`, {
+    action: status === 'suspended' ? 'suspend' : 'activate',
+    email: target.email,
+  });
   res.json({ ok: true });
 });
 
@@ -49,8 +54,13 @@ adminRouter.get('/companies', async (_req, res) => {
 adminRouter.put('/companies/:id/status', async (req, res) => {
   const companyId = Number(req.params.id);
   const status = req.body?.status === 'suspended' ? 'suspended' : 'active';
+  const target = await db('companies').where({ id: companyId }).first();
+  if (!target) return res.status(404).json({ error: 'Company not found' });
   await db('companies').where({ id: companyId }).update({ status });
-  await audit(req.user!.id, 'admin.company_status', `company:${companyId}`, { status });
+  await audit(req.user!.id, 'admin.company_status', `company:${companyId}`, {
+    action: status === 'suspended' ? 'suspend' : 'activate',
+    company: target.name,
+  });
   res.json({ ok: true });
 });
 

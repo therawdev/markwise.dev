@@ -29,6 +29,11 @@ export const codexProvider: AIProvider = {
     const thread = client().startThread({
       sandboxMode: 'read-only',
       skipGitRepoCheck: true,
+      // One-shot JSON tasks need little deliberation and no web access.
+      // ("minimal" is rejected with a 400 by gpt-5.5 via the ChatGPT backend — use "low".)
+      modelReasoningEffort: (process.env.CODEX_REASONING_EFFORT as 'low') || 'low',
+      webSearchMode: 'disabled',
+      ...(process.env.CODEX_MODEL ? { model: process.env.CODEX_MODEL } : {}),
     });
     const turn = await thread.run(prompt);
     if (!turn.finalResponse) throw new Error('Codex returned an empty response');

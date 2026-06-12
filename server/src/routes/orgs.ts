@@ -39,7 +39,11 @@ orgsRouter.post('/', async (req, res) => {
       )
       .returning('*');
     const ownerRole = roles.find((r: any) => r.name === 'Owner')!;
-    await trx('memberships').insert({ user_id: req.user!.id, company_id: company.id, role_id: ownerRole.id });
+    // The app owner is the platform admin, not a tenant: creating a company
+    // must not enroll them as its Owner member. Regular creators do become Owner.
+    if (!req.user!.is_app_owner) {
+      await trx('memberships').insert({ user_id: req.user!.id, company_id: company.id, role_id: ownerRole.id });
+    }
     return company;
   });
 
@@ -178,15 +182,71 @@ orgsRouter.post('/:id/invites', async (req, res) => {
 
   const token = crypto.randomBytes(18).toString('base64url');
   const expires = new Date(Date.now() + 7 * 24 * 3600 * 1000);
-  await db('invites').insert({
-    company_id: companyId,
-    role_id: role.id,
-    token,
-    created_by: req.user!.id,
-    expires_at: expires,
-  });
-  await audit(req.user!.id, 'invite.create', `company:${companyId}`, { role: role.name });
+  const [created] = await db('invites')
+    .insert({
+      company_id: companyId,
+      role_id: role.id,
+      token,
+      created_by: req.user!.id,
+      expires_at: expires,
+    })
+    .returning('id');
+  const inviteId = typeof created === 'object' ? created.id : created;
+  await audit(req.user!.id, 'invite.create', `company:${companyId}`, { invite_id: inviteId, role: role.name });
   res.json({ token, expires_at: expires.toISOString() });
+});
+
+// ---- list invites: the org Owner / app owner see all, other managers only their own ----
+orgsRouter.get('/:id/invites', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await hasPermission(req.user!, companyId, 'org:manage_members'))) {
+    return res.status(403).json({ error: 'You need the manage-members permission' });
+  }
+  const mine = await db('memberships')
+    .join('roles', 'roles.id', 'memberships.role_id')
+    .where({ 'memberships.company_id': companyId, 'memberships.user_id': req.user!.id })
+    .select('roles.name as role')
+    .first();
+  const seeAll = req.user!.is_app_owner || (mine && mine.role === 'Owner');
+  let q = db('invites')
+    .leftJoin('users as ju', 'ju.id', 'invites.used_by')
+    .leftJoin('users as cu', 'cu.id', 'invites.created_by')
+    .join('roles', 'roles.id', 'invites.role_id')
+    .where('invites.company_id', companyId)
+    .orderBy('invites.id', 'desc')
+    .select(
+      'invites.id', 'invites.token', 'invites.expires_at', 'invites.created_at', 'invites.used_by',
+      'invites.role_id', 'roles.name as role', 'ju.email as used_by_email', 'cu.email as created_by_email'
+    );
+  if (!seeAll) q = q.where('invites.created_by', req.user!.id);
+  res.json(await q);
+});
+
+// ---- delete an invite (revokes the link; same visibility scoping as the list) ----
+orgsRouter.delete('/:id/invites/:inviteId', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await hasPermission(req.user!, companyId, 'org:manage_members'))) {
+    return res.status(403).json({ error: 'You need the manage-members permission' });
+  }
+  const invite = await db('invites').where({ id: Number(req.params.inviteId), company_id: companyId }).first();
+  if (!invite) return res.status(404).json({ error: 'Invite not found' });
+  const mine = await db('memberships')
+    .join('roles', 'roles.id', 'memberships.role_id')
+    .where({ 'memberships.company_id': companyId, 'memberships.user_id': req.user!.id })
+    .select('roles.name as role')
+    .first();
+  const seeAll = req.user!.is_app_owner || (mine && mine.role === 'Owner');
+  if (!seeAll && invite.created_by !== req.user!.id) {
+    return res.status(403).json({ error: 'You can only delete invites you created' });
+  }
+  const role = await db('roles').where({ id: invite.role_id }).first();
+  await db('invites').where({ id: invite.id }).delete();
+  await audit(req.user!.id, 'invite.delete', `company:${companyId}`, {
+    invite_id: invite.id,
+    role: role ? role.name : invite.role_id,
+    state: invite.used_by ? 'used' : new Date(invite.expires_at) < new Date() ? 'expired' : 'active',
+  });
+  res.json({ ok: true });
 });
 
 // Accept an invite (any signed-in user).
@@ -207,6 +267,6 @@ orgsRouter.post('/invites/:token/accept', async (req, res) => {
     await trx('invites').where({ id: invite.id }).update({ used_by: req.user!.id });
   });
   const company = await db('companies').where({ id: invite.company_id }).first();
-  await audit(req.user!.id, 'invite.accept', `company:${invite.company_id}`);
+  await audit(req.user!.id, 'invite.accept', `company:${invite.company_id}`, { invite_id: invite.id, company: company.name });
   res.json({ ok: true, company });
 });

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, hasPermission } from '../middleware.js';
-import { activeProvider, providerStatus } from '../providers/index.js';
+import { activeProvider, providerStatus, PROVIDERS } from '../providers/index.js';
 import { aiLimiter } from '../rate-limit.js';
 
 export const aiRouter = Router();
@@ -27,28 +27,39 @@ aiRouter.post('/complete', aiLimiter, async (req, res) => {
     return res.status(403).json({ error: 'You need the AI permission in this company' });
   }
 
-  const provider = await activeProvider();
-  const gate = await provider.available();
-  if (!gate.ok) return res.status(503).json({ error: gate.reason || 'AI provider unavailable' });
+  // The selected provider goes first; unless failover is disabled, the other
+  // available providers back it up so a flaky provider degrades to a slower
+  // AI answer instead of the frontend's crude offline parser.
+  const primary = await activeProvider();
+  const failover = process.env.AI_FAILOVER !== 'false';
+  const chain = failover
+    ? [primary, ...Object.values(PROVIDERS).filter((p) => p.id !== primary.id)]
+    : [primary];
 
-  try {
-    const text = await provider.complete(prompt);
-    await db('ai_usage').insert({
-      user_id: req.user!.id,
-      company_id: companyId,
-      provider: provider.id,
-      kind: 'complete',
-      ok: true,
-    });
-    res.json({ text, provider: provider.id });
-  } catch (e) {
-    await db('ai_usage').insert({
-      user_id: req.user!.id,
-      company_id: companyId,
-      provider: provider.id,
-      kind: 'complete',
-      ok: false,
-    });
-    res.status(502).json({ error: e instanceof Error ? e.message : 'AI provider error' });
+  let lastErr: unknown = null;
+  for (const provider of chain) {
+    const gate = await provider.available();
+    if (!gate.ok) { lastErr = new Error(gate.reason || 'unavailable'); continue; }
+    try {
+      const text = await provider.complete(prompt);
+      await db('ai_usage').insert({
+        user_id: req.user!.id,
+        company_id: companyId,
+        provider: provider.id,
+        kind: 'complete',
+        ok: true,
+      });
+      return res.json({ text, provider: provider.id });
+    } catch (e) {
+      lastErr = e;
+      await db('ai_usage').insert({
+        user_id: req.user!.id,
+        company_id: companyId,
+        provider: provider.id,
+        kind: 'complete',
+        ok: false,
+      });
+    }
   }
+  res.status(502).json({ error: lastErr instanceof Error ? lastErr.message : 'AI provider error' });
 });

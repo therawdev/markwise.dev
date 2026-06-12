@@ -54,13 +54,17 @@ server/src/       Express + TypeScript + Knex (PostgreSQL)
 
 | id | What | Status |
 |---|---|---|
-| `codex` | OpenAI **Codex SDK** (`@openai/codex-sdk`). The SDK spawns the bundled `codex` CLI and talks JSONL over stdio. Auth: `OPENAI_API_KEY` (passed as `CODEX_API_KEY` to the CLI) or a host-level `codex login`. | **Active default** |
-| `claude_code` | **Claude Code** headless CLI: `claude -p --output-format json` with the prompt on stdin. Needs the `claude` CLI authenticated on the host. | Available |
+| `gemini` | **Google Gemini** via plain REST (`generativelanguage.googleapis.com`), no SDK. Auth: `GEMINI_API_KEY`; model: `GEMINI_MODEL` (default `gemini-2.5-flash`, free tier). | **Active default** |
+| `codex` | OpenAI **Codex SDK** (`@openai/codex-sdk`). The SDK spawns the bundled `codex` CLI and talks JSONL over stdio. Auth: `OPENAI_API_KEY` (passed as `CODEX_API_KEY` to the CLI) or a host-level `codex login`. | Available (first failover) |
+| `claude_code` | **Claude Code** headless CLI: `claude -p --output-format json` with the prompt on stdin. Needs the `claude` CLI authenticated on the host. Model: `CLAUDE_CODE_MODEL` (default `haiku`). | Available |
 | `claude` | **Claude SDK / Claude API** via `@anthropic-ai/sdk`, model `claude-opus-4-8`, adaptive thinking. | **Disabled this session** — gate: `CLAUDE_API_ENABLED=true` (env) or the admin-panel toggle, plus `ANTHROPIC_API_KEY` |
 
 Switch the active provider in the admin panel (persisted in the `settings` table)
 or with the `AI_PROVIDER` env var. The disabled gate is enforced server-side in
 `providers/claude.ts` — selecting `claude` while disabled returns an error.
+If the active provider errors, `/api/ai/complete` fails over to the other
+available providers in the `PROVIDERS` order (disable with `AI_FAILOVER=false`);
+the response's `provider` field names who actually answered.
 
 ### RBAC model
 
