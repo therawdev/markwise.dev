@@ -351,28 +351,59 @@
   }
 
   // ---------- share modal ----------
+  // Real share links: a server-issued token makes the doc publicly readable at
+  // /share.html?t=<token>. Creating/revoking requires the doc:share permission.
   function ShareModal({ docTitle, onClose, toast }) {
+    const doc = window.MW_DOC || {};
+    const [token, setToken] = useState(doc.share_token || null);
+    const [busy, setBusy] = useState(false);
     useEffect(() => {
       const k = (e) => { if (e.key === 'Escape') onClose(); };
       window.addEventListener('keydown', k);
       return () => window.removeEventListener('keydown', k);
     }, [onClose]);
-    const slug = (docTitle || 'untitled').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32);
-    const url = 'https://glyph.app/d/' + (slug || 'untitled');
+    const url = token ? location.origin + '/share.html?t=' + token : null;
+    const create = async () => {
+      setBusy(true);
+      try {
+        const out = await window.MarkwiseAPI.post('/api/docs/' + doc.id + '/share');
+        setToken(out.share_token);
+        window.MW_DOC.share_token = out.share_token;
+        toast('Share link created');
+      } catch (e) { toast(e.message || 'Could not create the link'); }
+      setBusy(false);
+    };
+    const revoke = async () => {
+      setBusy(true);
+      try {
+        await window.MarkwiseAPI.del('/api/docs/' + doc.id + '/share');
+        setToken(null);
+        window.MW_DOC.share_token = null;
+        toast('Share link revoked');
+      } catch (e) { toast(e.message || 'Could not revoke the link'); }
+      setBusy(false);
+    };
     return (
       <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
         <div className="modal share-modal" data-screen-label="Share document">
           <div className="picker-head">
             <div>
               <div className="modal-title">Share “{docTitle}”</div>
-              <div className="modal-sub">Anyone with the link can view this document and its visuals.</div>
+              <div className="modal-sub">{token ? 'Anyone with the link can view this document and its visuals. Revoke it to cut off access.' : 'Create a link that lets anyone view a read-only copy of this document.'}</div>
             </div>
             <button className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
           </div>
-          <div className="share-row">
-            <input className="fld" readOnly value={url} onFocus={(e) => e.target.select()} />
-            <button className="primary-btn" onClick={() => navigator.clipboard.writeText(url).then(() => toast('Link copied'))}>Copy link</button>
-          </div>
+          {token ? (
+            <div className="share-row">
+              <input className="fld" readOnly value={url} onFocus={(e) => e.target.select()} />
+              <button className="primary-btn" onClick={() => navigator.clipboard.writeText(url).then(() => toast('Link copied'))}>Copy link</button>
+              <button className="secondary-btn" disabled={busy} onClick={revoke}>Revoke</button>
+            </div>
+          ) : (
+            <div className="share-row">
+              <button className="primary-btn" disabled={busy} onClick={create}>{busy ? 'Creating…' : 'Create share link'}</button>
+            </div>
+          )}
           <div className="share-note">Individual visuals can be exported as PNG or SVG from their Edit panel.</div>
         </div>
       </div>

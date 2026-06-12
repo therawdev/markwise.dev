@@ -1,0 +1,34 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: markwise
+      POSTGRES_PASSWORD: markwise_dev
+      POSTGRES_DB: markwise
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U markwise -d markwise']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    ports:
+      - '3000:3000'
+    environment:
+      DATABASE_URL: postgres://markwise:markwise_dev@db:5432/markwise
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      APP_OWNER_EMAIL: ${APP_OWNER_EMAIL:-admin@markwise.dev}
+      APP_OWNER_PASSWORD: ${APP_OWNER_PASSWORD:-}
+      AI_PROVIDER: ${AI_PROVIDER:-codex}
+      # Contents of ~/.codex/auth.json from an authenticated `codex login`;
+      # restored by docker-entrypoint.sh. Leave empty to run with the offline parser.
+      CODEX_AUTH_JSON: ${CODEX_AUTH_JSON:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

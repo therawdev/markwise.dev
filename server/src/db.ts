@@ -2,7 +2,11 @@ import knex from 'knex';
 
 export const db = knex({
   client: 'pg',
-  connection: process.env.DATABASE_URL || 'postgres://markwise:markwise_dev@localhost:5432/markwise',
+  connection: {
+    connectionString: process.env.DATABASE_URL || 'postgres://markwise:markwise_dev@localhost:5432/markwise',
+    // Managed Postgres (e.g. Render external URLs) requires TLS; internal/local does not.
+    ...(process.env.DATABASE_SSL === 'true' ? { ssl: { rejectUnauthorized: false } } : {}),
+  },
   pool: { min: 0, max: 10 },
 });
 

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db, audit } from '../db.js';
 import { setAuthCookie, clearAuthCookie } from '../auth.js';
 import { requireAuth } from '../middleware.js';
+import { authLimiter } from '../rate-limit.js';
 
 export const authRouter = Router();
 
@@ -13,7 +14,7 @@ const credsSchema = z.object({
   name: z.string().min(1).max(120).optional(),
 });
 
-authRouter.post('/signup', async (req, res) => {
+authRouter.post('/signup', authLimiter, async (req, res) => {
   const parsed = credsSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Valid email and a password of 8+ characters required' });
   const { email, password, name } = parsed.data;
@@ -34,7 +35,7 @@ authRouter.post('/signup', async (req, res) => {
   res.json({ id: user.id, email: user.email, name: user.name, is_app_owner: user.is_app_owner });
 });
 
-authRouter.post('/login', async (req, res) => {
+authRouter.post('/login', authLimiter, async (req, res) => {
   const parsed = credsSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Email and password required' });
   const { email, password } = parsed.data;

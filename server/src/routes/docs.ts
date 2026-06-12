@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'node:crypto';
 import { db, audit } from '../db.js';
 import { requireAuth, canAccessDoc, hasPermission } from '../middleware.js';
 
@@ -71,6 +72,35 @@ docsRouter.put('/:id', async (req, res) => {
   if (req.body?.title != null) patch.title = String(req.body.title).slice(0, 200);
   if (req.body?.blocks != null) patch.blocks = JSON.stringify(req.body.blocks);
   await db('documents').where({ id: doc.id }).update(patch);
+  res.json({ ok: true });
+});
+
+// ---- share links: a token makes the doc publicly readable (view only) ----
+docsRouter.post('/:id/share', async (req, res) => {
+  const doc = await db('documents').where({ id: Number(req.params.id) }).first();
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (!(await canAccessDoc(req.user!, doc, 'doc:share'))) {
+    return res.status(403).json({ error: 'You need the share permission for this document' });
+  }
+  let token = doc.share_token;
+  if (!token) {
+    token = crypto.randomBytes(24).toString('base64url');
+    await db('documents').where({ id: doc.id }).update({ share_token: token });
+    await audit(req.user!.id, 'doc.share', `doc:${doc.id}`);
+  }
+  res.json({ share_token: token });
+});
+
+docsRouter.delete('/:id/share', async (req, res) => {
+  const doc = await db('documents').where({ id: Number(req.params.id) }).first();
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (!(await canAccessDoc(req.user!, doc, 'doc:share'))) {
+    return res.status(403).json({ error: 'You need the share permission for this document' });
+  }
+  if (doc.share_token) {
+    await db('documents').where({ id: doc.id }).update({ share_token: null });
+    await audit(req.user!.id, 'doc.unshare', `doc:${doc.id}`);
+  }
   res.json({ ok: true });
 });
 

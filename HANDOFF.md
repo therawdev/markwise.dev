@@ -1,7 +1,8 @@
 # Session handoff — state & next steps
 
 > Context document for the next working session (human or agent).
-> Written 2026-06-12 at the end of the initial build session.
+> Written 2026-06-12 at the end of the initial build session;
+> updated 2026-06-12 (second session) after Phase 2.
 > Architecture and conventions live in [CLAUDE.md](CLAUDE.md) — read that first.
 
 ## Where the project stands
@@ -39,27 +40,38 @@ container by the hook; change for production).
   (user-explicit). The SDK wraps the bundled `codex` CLI.
 - Claude SDK/API stays **disabled** until the owner flips it.
 
+## Done in the second session (2026-06-12)
+
+1. **Codex auth** — `codex login --device-auth` completed in the `markwise`
+   environment (network egress to openai.com now works). The user holds the
+   minified `auth.json` to store as the `CODEX_AUTH_JSON` environment variable
+   so the SessionStart hook restores it in future sessions.
+2. **Live AI verified end-to-end** — POST `/api/ai/complete` with the
+   diagram-spec prompt from `app/ai.jsx`: Codex returned valid JSON passing the
+   frontend `sanitize()` shape on the first attempt (10 items, correct `best`
+   types per the rank-change rule). **No prompt tuning was needed.** ~22s
+   per completion (Codex CLI startup overhead).
+3. **Phase 2 shipped**:
+   - `Dockerfile` + `docker-compose.yml` (app + Postgres). Entrypoint restores
+     `CODEX_AUTH_JSON`, migrates, seeds, starts the server. Verified by running
+     the image against Postgres (health + login OK).
+   - GitHub Actions CI (`.github/workflows/ci.yml`): server typecheck + Docker
+     build. `tsx` moved to runtime deps; `npm run typecheck` added.
+   - Security: helmet (CSP off — browser-compiled JSX needs it), rate limits
+     (login/signup 20/15min per IP; AI 30/min per user), `trust proxy`.
+   - Real share links: `documents.share_token`, POST/DELETE
+     `/api/docs/:id/share` (gated by `doc:share`, audited), public
+     `GET /api/shared/:token`, read-only viewer `share.html` (sanitizes author
+     HTML), ShareModal rewired from the fake URL to create/copy/revoke.
+   - **Render** chosen as the host: `render.yaml` blueprint (Docker web service
+     + managed Postgres). Secrets to set in the dashboard: `APP_OWNER_PASSWORD`,
+     `CODEX_AUTH_JSON`.
+
 ## Pending — in order
 
-1. **Codex auth bootstrap** (user-side, then verify):
-   - The default web environment was not editable (placeholder env id), so the
-     user is creating a new environment named `markwise` with Custom network
-     access allowing: `auth.openai.com`, `api.openai.com`, `*.openai.com`,
-     `chatgpt.com`, `*.chatgpt.com`.
-   - Credential: either the user runs `codex login` locally and stores
-     `~/.codex/auth.json` contents as the `CODEX_AUTH_JSON` environment
-     variable (preferred — the hook restores it automatically), or run
-     `codex login --device-auth` in-session (binary:
-     `server/node_modules/.bin/codex`) and relay the code to the user.
-   - **Then verify live AI end-to-end**: sign in, open a doc, select text,
-     Visualize — confirm Codex returns a valid diagram spec for the prompt in
-     `app/ai.jsx`. The prompts were written for Claude; tune for Codex output
-     quality if needed.
-2. **Phase 2 (agreed roadmap)**: deployment (Dockerfile + compose + CI;
-   hosting target not yet chosen — ask), security hardening (rate limiting on
-   auth/AI, helmet, password reset), real share links (the Share button is
-   still the prototype's fake modal; implement a public read-only view gated
-   by `doc:share`).
+1. **Deploy**: user creates the Render Blueprint from `render.yaml` and sets the
+   two secrets. `db.ts` honors `DATABASE_SSL=true` if an external DB URL is used.
+2. **Phase 2 leftovers**: password reset flow.
 3. **Phase 3**: plans/billing with AI quotas (schema groundwork exists:
    `companies.plan`, `ai_usage`), server-side document versioning, email invites.
 
@@ -67,8 +79,9 @@ container by the hook; change for production).
 
 - The GitHub PAT used in the build session was exposed in conversation and
   should be revoked; use a fresh token / environment credential for pushes.
-- This sandbox blocked `api.openai.com` egress — AI calls fail gracefully into
-  the frontend's offline parser, which is the expected no-key behavior.
+- The Codex `auth.json` was shared in the second session's conversation so the
+  user could save it as `CODEX_AUTH_JSON`; the user can rotate it by re-running
+  `codex login` whenever needed.
 - `interact.jsx` overrides the `Diagram` component defined in `diagrams-b.jsx`
   (script order in `index.html` matters) — change rendering there, not in
   diagrams-b.

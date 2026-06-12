@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, hasPermission } from '../middleware.js';
 import { activeProvider, providerStatus } from '../providers/index.js';
+import { aiLimiter } from '../rate-limit.js';
 
 export const aiRouter = Router();
 aiRouter.use(requireAuth);
@@ -15,7 +16,7 @@ aiRouter.get('/status', async (_req, res) => {
  * slide bullets, subtitles) all flow through here; its offline parser remains
  * the fallback when this errors.
  */
-aiRouter.post('/complete', async (req, res) => {
+aiRouter.post('/complete', aiLimiter, async (req, res) => {
   const prompt = String(req.body?.prompt || '');
   if (!prompt.trim()) return res.status(400).json({ error: 'Prompt required' });
   if (prompt.length > 20000) return res.status(413).json({ error: 'Prompt too long' });

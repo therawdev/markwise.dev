@@ -1,0 +1,11 @@
+.git
+.github
+.claude
+node_modules
+server/node_modules
+server/.env
+server/dist
+*.log
+Dockerfile
+docker-compose.yml
+chats
