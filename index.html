@@ -773,6 +773,26 @@
   .block-gap-btn:hover { border-color: var(--accent); }
   .tb-p:empty::before { content: 'Type something…'; color: #b8b3aa; pointer-events: none; }
 
+  /* ambient section Visualize — gutter ✦ + active-section accent bar */
+  .sec-viz {
+    position: fixed; z-index: 30; width: 34px; height: 34px; border-radius: 50%;
+    background: #fff; border: 1.5px solid var(--hairline); color: var(--accent);
+    display: grid; place-items: center; box-shadow: 0 2px 8px rgba(20,18,14,.08);
+    opacity: .55; transition: opacity .14s, transform .12s, border-color .12s, background .12s, color .12s;
+  }
+  .sec-viz:hover { opacity: 1; border-color: var(--accent); transform: scale(1.07); }
+  .sec-viz.suggested {
+    opacity: 1; background: var(--accent); color: #fff; border-color: var(--accent);
+    animation: sec-pulse 2.4s ease-in-out infinite;
+  }
+  .sec-viz.suggested:hover { transform: scale(1.07); }
+  @keyframes sec-pulse {
+    0%, 100% { box-shadow: 0 2px 9px rgba(47,109,240,.22); }
+    50% { box-shadow: 0 2px 18px rgba(47,109,240,.5); }
+  }
+  @media (prefers-reduced-motion: reduce) { .sec-viz.suggested { animation: none; } }
+  .tb.sec-active { box-shadow: inset 3px 0 0 var(--accent-soft); border-radius: 2px; transition: box-shadow .14s; }
+
   /* ---------- panel: item footer & layout hint ---------- */
   .item-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   /* per-item icon picker */
@@ -810,7 +830,8 @@
   /* ---------- print ---------- */
   @media print {
     .topbar, .panel, .fmtbar, .fmtbar-mini, .hint-pill, .toast, .overlay, .present-root, .vis-toolbar,
-    .page-marks, .block-gap, .viz-fab, .cmt-float, .comments-rail, .presence-stack, .vis-resize { display: none !important; }
+    .page-marks, .block-gap, .viz-fab, .sec-viz, .cmt-float, .comments-rail, .presence-stack, .vis-resize { display: none !important; }
+    .tb.sec-active { box-shadow: none !important; }
     /* never print the empty-paragraph placeholder */
     .tb-p:empty::before { content: '' !important; display: none !important; }
     .tb-p:empty { display: none !important; }

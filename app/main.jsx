@@ -54,6 +54,10 @@
     useEffect(() => { setPreviewVar(null); }, [selVis]);
     const pickerRef = useRef(null);
     pickerRef.current = picker;
+    const fabRef = useRef(fab);
+    fabRef.current = fab;
+    const spaceRef = useRef('doc');
+    spaceRef.current = space;
 
     // ----- comments + collaboration state -----
     const [comments, setComments] = useState([]);
@@ -634,6 +638,122 @@
       });
     }, [presence, blocks, space]);
 
+    // ===================== ambient section Visualize =====================
+    // A "section" is a heading (h1/h2) plus the text blocks under it, up to the
+    // next heading. As you scroll / edit / hover, the active section gets a left
+    // accent bar and a ✦ Visualize button in the gutter. Sections that look like
+    // a good diagram (lists, steps, several points) get a "suggested" emphasis.
+    // Manual text selection still works and takes priority (we hide this then).
+    const htmlText = (html) => { const d = document.createElement('div'); d.innerHTML = html || ''; return (d.textContent || '').trim(); };
+    function looksVisualizable(htmls, texts) {
+      if (htmls.some((h) => /<(ul|ol|li)\b/i.test(h || ''))) return true;
+      if (texts.length >= 3) return true;
+      const joined = texts.join(' ');
+      const enumParts = joined.split(/[;•]|(?:,| and )/i).map((s) => s.trim()).filter((s) => s.length > 2);
+      if (enumParts.length >= 4) return true;
+      if (/\b(first|second|third|then|next|finally|step\s*\d|phase\s*\d)\b/i.test(joined) && texts.length >= 2) return true;
+      return false;
+    }
+    const sections = React.useMemo(() => {
+      const secs = [];
+      let cur = null;
+      blocks.forEach((b) => {
+        const heading = b.kind === 'text' && (b.tag === 'h1' || b.tag === 'h2');
+        if (heading) { cur = { key: b.id, headingId: b.id, title: htmlText(b.html), ids: [b.id], bodyIds: [] }; secs.push(cur); }
+        else if (b.kind === 'text') {
+          if (!cur) { cur = { key: '__intro', headingId: null, title: '', ids: [], bodyIds: [] }; secs.push(cur); }
+          cur.ids.push(b.id); cur.bodyIds.push(b.id);
+        } else if (cur) { cur.ids.push(b.id); } // a visual is part of the range, not the source text
+      });
+      secs.forEach((s) => {
+        const htmls = s.bodyIds.map((id) => (blocks.find((x) => x.id === id) || {}).html || '');
+        const texts = htmls.map(htmlText).filter(Boolean);
+        s.bodyText = texts.join('\n');
+        s.text = (s.headingId && s.title ? s.title + '\n' : '') + s.bodyText;
+        s.lastId = s.bodyIds.length ? s.bodyIds[s.bodyIds.length - 1] : s.headingId;
+        s.canViz = s.bodyText.replace(/\s/g, '').length >= 16;
+        s.suggested = s.canViz && looksVisualizable(htmls, texts);
+      });
+      return secs.filter((s) => s.canViz);
+    }, [blocks]);
+    const sectionsRef = useRef(sections);
+    sectionsRef.current = sections;
+    const activeKeyRef = useRef(null); // section key chosen by the last interaction
+    const [secFab, setSecFab] = useState(null); // { key, top, left, sec }
+
+    // place the gutter ✦ at the active section (last interaction wins; falls back
+    // to the top-most visible section). Re-runs on scroll/hover/caret/resize.
+    const positionSecFab = useCallback(() => {
+      if (fabRef.current || pickerRef.current || blockSelRef.current || spaceRef.current !== 'doc') { setSecFab(null); return; }
+      const secs = sectionsRef.current;
+      if (!secs.length) { setSecFab(null); return; }
+      let sec = secs.find((s) => s.key === activeKeyRef.current) || secs[0];
+      const el = document.querySelector('.sheet [data-block-id="' + (sec.headingId || sec.ids[0]) + '"]');
+      const sheet = document.querySelector('.sheet');
+      if (!el || !sheet) { setSecFab(null); return; }
+      const r = el.getBoundingClientRect();
+      const sr = sheet.getBoundingClientRect();
+      setSecFab({ key: sec.key, top: Math.round(r.top + 2), left: Math.round(Math.max(12, sr.left - 46)), sec });
+    }, []);
+    const keyFromBlock = (bid) => {
+      const s = bid && sectionsRef.current.find((x) => x.ids.indexOf(bid) !== -1);
+      return s ? s.key : null;
+    };
+
+    useEffect(() => {
+      let raf = 0, lastHover = null;
+      const schedule = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; positionSecFab(); }); };
+      const onMove = (e) => {
+        const tb = e.target.closest && e.target.closest('.sheet .tb[data-block-id]');
+        if (!tb || tb.dataset.blockId === lastHover) return; // only when hovering a NEW block
+        lastHover = tb.dataset.blockId;
+        const k = keyFromBlock(lastHover);
+        if (k) { activeKeyRef.current = k; schedule(); }
+      };
+      const onSel = () => {
+        const s = window.getSelection();
+        if (!s || !s.isCollapsed || !s.anchorNode) return;
+        const el = s.anchorNode.nodeType === 3 ? s.anchorNode.parentElement : s.anchorNode;
+        const tb = el && el.closest && el.closest('.sheet .tb[data-block-id]');
+        const k = tb && keyFromBlock(tb.dataset.blockId);
+        if (k) { activeKeyRef.current = k; schedule(); }
+      };
+      const onScroll = () => {
+        // scrolling re-targets to the top-most visible section
+        const scroll = document.querySelector('.doc-scroll');
+        const secs = sectionsRef.current;
+        if (scroll && secs.length) {
+          const line = scroll.getBoundingClientRect().top + 90;
+          let key = secs[0].key;
+          secs.forEach((s) => {
+            const el = document.querySelector('.sheet [data-block-id="' + (s.headingId || s.ids[0]) + '"]');
+            if (el && el.getBoundingClientRect().top <= line) key = s.key;
+          });
+          activeKeyRef.current = key;
+        }
+        schedule();
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('scroll', onScroll, true);
+      document.addEventListener('selectionchange', onSel);
+      window.addEventListener('resize', schedule);
+      return () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('scroll', onScroll, true);
+        document.removeEventListener('selectionchange', onSel);
+        window.removeEventListener('resize', schedule);
+      };
+    }, [positionSecFab]);
+    useEffect(() => { positionSecFab(); }, [sections, fab, picker, space, blockSel, positionSecFab]);
+
+    // left accent bar on the active section's block range
+    useEffect(() => {
+      const ids = (secFab && secFab.sec) ? secFab.sec.ids : [];
+      document.querySelectorAll('.sheet [data-block-id]').forEach((el) => {
+        el.classList.toggle('sec-active', ids.indexOf(el.dataset.blockId) !== -1);
+      });
+    }, [secFab, blocks]);
+
     // ----- comment actions -----
     const startComment = useCallback(() => {
       if (!GC) return;
@@ -686,9 +806,8 @@
     const closeComments = () => { cancelNewComment(); setShowComments(false); };
 
     // ----- generation flow -----
-    async function startGenerate() {
-      if (!fab) return;
-      const { text, blockId } = fab;
+    async function generateFrom(text, blockId) {
+      if (!text || text.replace(/\s/g, '').length < 12) return;
       setFab(null);
       clearBlockSel();
       window.getSelection() && window.getSelection().removeAllRanges();
@@ -696,6 +815,7 @@
       const spec = await window.GlyphAI.generate(text);
       setPicker((p) => (p && p.text === text ? { ...p, phase: 'ready', spec } : p));
     }
+    function startGenerate() { if (fab) generateFrom(fab.text, fab.blockId); }
 
     function insertVisual(type) {
       const p = pickerRef.current;
@@ -951,6 +1071,22 @@
 
         <FormatBar fab={fab} onTag={onTag} onComment={startComment} />
         <VizFab fab={fab} onVisualize={startGenerate} />
+        {secFab && !fab && !picker && space === 'doc' && !blockSel ? (
+          <button
+            className={'sec-viz' + (secFab.sec.suggested ? ' suggested' : '')}
+            style={{ top: secFab.top, left: secFab.left }}
+            title={secFab.sec.suggested
+              ? 'Visualize this section — looks like a good fit'
+              : (secFab.sec.headingId ? 'Visualize “' + (secFab.sec.title || 'this section') + '”' : 'Visualize this section')}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => generateFrom(secFab.sec.text, secFab.sec.lastId)}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="6.5" cy="17.5" r="2.2" /><circle cx="17.5" cy="6.5" r="2.2" /><circle cx="17.5" cy="17.5" r="2.2" />
+              <path d="M8.6 16.2 15.4 8M17.5 9v6" />
+            </svg>
+          </button>
+        ) : null}
         {hint && !picker ? <HintPill onDismiss={() => { setHint(false); localStorage.setItem(LS_HINT, '1'); }} /> : null}
         {picker ? (
           <PickerOverlay
