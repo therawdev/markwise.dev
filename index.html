@@ -791,7 +791,12 @@
     50% { box-shadow: 0 2px 18px rgba(47,109,240,.5); }
   }
   @media (prefers-reduced-motion: reduce) { .sec-viz.suggested { animation: none; } }
-  .tb.sec-active { box-shadow: inset 4px 0 0 var(--accent); background: var(--accent-soft); border-radius: 3px; transition: box-shadow .14s, background .14s; }
+  /* a single bright bar at the page's left border marks the active section */
+  .sec-bar {
+    position: fixed; z-index: 6; width: 4px; border-radius: 3px;
+    background: var(--accent); box-shadow: 0 0 8px var(--accent-soft);
+    transition: top .12s ease, height .12s ease; pointer-events: none;
+  }
 
   /* ---------- panel: item footer & layout hint ---------- */
   .item-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -830,8 +835,7 @@
   /* ---------- print ---------- */
   @media print {
     .topbar, .panel, .fmtbar, .fmtbar-mini, .hint-pill, .toast, .overlay, .present-root, .vis-toolbar,
-    .page-marks, .block-gap, .viz-fab, .sec-viz, .cmt-float, .comments-rail, .presence-stack, .vis-resize { display: none !important; }
-    .tb.sec-active { box-shadow: none !important; }
+    .page-marks, .block-gap, .viz-fab, .sec-viz, .sec-bar, .cmt-float, .comments-rail, .presence-stack, .vis-resize { display: none !important; }
     /* never print the empty-paragraph placeholder */
     .tb-p:empty::before { content: '' !important; display: none !important; }
     .tb-p:empty { display: none !important; }

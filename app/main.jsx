@@ -693,7 +693,19 @@
       if (!el || !sheet) { setSecFab(null); return; }
       const r = el.getBoundingClientRect();
       const sr = sheet.getBoundingClientRect();
-      setSecFab({ key: sec.key, top: Math.round(r.top + 2), left: Math.round(Math.max(12, sr.left - 46)), sec });
+      // vertical extent of the whole section (first block top → last block bottom),
+      // drawn as a single bright bar at the page's left border
+      const firstEl = document.querySelector('.sheet [data-block-id="' + sec.ids[0] + '"]');
+      const lastEl = document.querySelector('.sheet [data-block-id="' + sec.ids[sec.ids.length - 1] + '"]');
+      const fr = (firstEl || el).getBoundingClientRect();
+      const lr = (lastEl || el).getBoundingClientRect();
+      setSecFab({
+        key: sec.key,
+        top: Math.round(r.top + 2),
+        left: Math.round(Math.max(12, sr.left - 46)),
+        bar: { top: Math.round(fr.top), height: Math.max(0, Math.round(lr.bottom - fr.top)), left: Math.round(sr.left) },
+        sec,
+      });
     }, []);
     const keyFromBlock = (bid) => {
       const s = bid && sectionsRef.current.find((x) => x.ids.indexOf(bid) !== -1);
@@ -745,14 +757,6 @@
       };
     }, [positionSecFab]);
     useEffect(() => { positionSecFab(); }, [sections, fab, picker, space, blockSel, positionSecFab]);
-
-    // left accent bar on the active section's block range
-    useEffect(() => {
-      const ids = (secFab && secFab.sec) ? secFab.sec.ids : [];
-      document.querySelectorAll('.sheet [data-block-id]').forEach((el) => {
-        el.classList.toggle('sec-active', ids.indexOf(el.dataset.blockId) !== -1);
-      });
-    }, [secFab, blocks]);
 
     // ----- comment actions -----
     const startComment = useCallback(() => {
@@ -1071,6 +1075,9 @@
 
         <FormatBar fab={fab} onTag={onTag} onComment={startComment} />
         <VizFab fab={fab} onVisualize={startGenerate} />
+        {secFab && !fab && !picker && space === 'doc' && !blockSel && secFab.bar ? (
+          <div className="sec-bar" style={{ top: secFab.bar.top, height: secFab.bar.height, left: secFab.bar.left }}></div>
+        ) : null}
         {secFab && !fab && !picker && space === 'doc' && !blockSel ? (
           <button
             className={'sec-viz' + (secFab.sec.suggested ? ' suggested' : '')}
