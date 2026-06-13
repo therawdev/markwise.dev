@@ -8,6 +8,7 @@
   const { DeckOverlay } = window.GlyphDeck;
   const { Canvas } = window.GlyphCanvas;
   const { galleryBlocks } = window.GlyphGallery;
+  const GC = window.GlyphComments;
 
   const LS_HINT = 'glyph-hint-dismissed-v1';
   const uid = () => 'v' + Math.random().toString(36).slice(2, 9);
@@ -54,6 +55,25 @@
     const pickerRef = useRef(null);
     pickerRef.current = picker;
 
+    // ----- comments + collaboration state -----
+    const [comments, setComments] = useState([]);
+    const [commentDraft, setCommentDraft] = useState(null); // { cid, anchor:{blockIds,quote} }
+    const [showComments, setShowComments] = useState(false);
+    const [moreOpen, setMoreOpen] = useState(false);
+    useEffect(() => {
+      if (!moreOpen) return;
+      const close = (e) => { if (!e.target.closest || !e.target.closest('.more-wrap')) setMoreOpen(false); };
+      document.addEventListener('mousedown', close);
+      return () => document.removeEventListener('mousedown', close);
+    }, [moreOpen]);
+    const [activeCid, setActiveCid] = useState(null);
+    const [members, setMembers] = useState([]);         // org members, for @mentions
+    const [presence, setPresence] = useState([]);       // other active editors
+    const editingBlockRef = useRef(null);               // block id I'm focused in
+    const serverVersionRef = useRef(boot.doc.updated_at || null);
+    const commentsRef = useRef(comments);
+    commentsRef.current = comments;
+
     // ----- persistence (debounced, to the API) -----
     const saveT = useRef(null);
     const firstSave = useRef(true);
@@ -64,7 +84,8 @@
       clearTimeout(saveT.current);
       saveT.current = setTimeout(async () => {
         try {
-          await window.MarkwiseAPI.saveDoc(docId, { title: docTitle, blocks });
+          const r = await window.MarkwiseAPI.saveDoc(docId, { title: docTitle, blocks });
+          if (r && r.updated_at) serverVersionRef.current = r.updated_at; // our own version — don't re-pull it
           setSaveState('saved');
         } catch (e) {
           setSaveState('error');
@@ -77,6 +98,8 @@
       setToastMsg(msg);
       setTimeout(() => setToastMsg(null), 2200);
     }, []);
+    const saveStateRef = useRef(saveState);
+    saveStateRef.current = saveState;
 
     // ----- undo history (coalesces rapid edits like typing) -----
     const history = useRef([]);
@@ -147,6 +170,62 @@
       post.selectNodeContents(el);
       post.setStart(r.endContainer, r.endOffset);
       return { atStart: !pre.toString().length, atEnd: !post.toString().length };
+    };
+
+    // always keep an editable line at the very end, so you can click below a
+    // trailing visual and just start typing (no "+ Text" needed)
+    useEffect(() => {
+      setBlocks((bs) => (bs.length && bs[bs.length - 1].kind === 'visual'
+        ? [...bs, { id: newBlockId(), kind: 'text', tag: 'p', html: '' }]
+        : bs));
+    }, [blocks]);
+    const focusLastText = () => {
+      const bs = blocksRef.current;
+      for (let k = bs.length - 1; k >= 0; k--) if (bs[k].kind === 'text') { focusEdge(bs[k].id, 'end'); return; }
+    };
+
+    // ----- drag a visual to a new position among the document blocks -----
+    const [dragBlk, setDragBlk] = useState(null);
+    const [dropIdx, setDropIdx] = useState(null);
+    const dragBlkRef = useRef(null);
+    const dropIdxRef = useRef(null);
+    const startBlockDrag = (id, e) => {
+      if (e.button != null && e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragBlkRef.current = id; setDragBlk(id);
+      document.body.classList.add('no-select');
+      const move = (ev) => {
+        const el = document.elementFromPoint(ev.clientX, ev.clientY);
+        const blk = el && el.closest && el.closest('.sheet [data-block-id]');
+        const bs = blocksRef.current;
+        if (!blk) return;
+        const overIdx = bs.findIndex((b) => b.id === blk.dataset.blockId);
+        if (overIdx === -1) return;
+        const r = blk.getBoundingClientRect();
+        const idx = ev.clientY > r.top + r.height / 2 ? overIdx + 1 : overIdx;
+        dropIdxRef.current = idx; setDropIdx(idx);
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        document.body.classList.remove('no-select');
+        const from = blocksRef.current.findIndex((b) => b.id === dragBlkRef.current);
+        const to = dropIdxRef.current;
+        if (from !== -1 && to != null) {
+          setBlocks((bs) => {
+            const next = bs.slice();
+            const [moved] = next.splice(from, 1);
+            let t = to > from ? to - 1 : to; // adjust for the removed element
+            t = Math.max(0, Math.min(next.length, t));
+            next.splice(t, 0, moved);
+            return next;
+          });
+        }
+        dragBlkRef.current = null; dropIdxRef.current = null; setDragBlk(null); setDropIdx(null);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
     };
 
     // block-level keyboard: Enter splits, Backspace merges/deletes, Delete merges forward, arrows cross blocks
@@ -451,6 +530,161 @@
       return () => window.removeEventListener('scroll', onScroll, true);
     }, []);
 
+    // ===================== comments + collaboration =====================
+
+    // load existing threads + org members (for @mentions) on open
+    useEffect(() => {
+      let alive = true;
+      window.MarkwiseAPI.listComments(docId).then((rows) => { if (alive) setComments(rows || []); }).catch(() => {});
+      const cid = boot.doc.company_id;
+      if (cid) window.MarkwiseAPI.get('/api/orgs/' + cid).then((o) => { if (alive) setMembers((o && o.members) || []); }).catch(() => {});
+      return () => { alive = false; };
+    }, [docId]);
+
+    // keep the <mark> highlights (resolved / active) in sync with thread state
+    useEffect(() => { if (GC) GC.applyMarkStates(comments, activeCid); }, [comments, activeCid, blocks, space]);
+
+    // clicking a comment highlight activates its thread — the margin card expands
+    // (or, if the full rail is open, its list item scrolls into view)
+    useEffect(() => {
+      const onClick = (e) => {
+        const m = e.target.closest && e.target.closest('mark.cmt[data-cid]');
+        if (!m) return;
+        const cid = m.getAttribute('data-cid');
+        setActiveCid(cid);
+        setTimeout(() => {
+          const card = document.querySelector('.comments-rail .cmt-thread[data-cid="' + cid + '"]');
+          if (card) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }, 60);
+      };
+      document.addEventListener('click', onClick);
+      return () => document.removeEventListener('click', onClick);
+    }, []);
+
+    // track which text block I'm focused in — published to others as a soft lock
+    useEffect(() => {
+      const onFocus = (e) => {
+        const tb = e.target.closest && e.target.closest('.sheet .tb[data-block-id]');
+        editingBlockRef.current = tb ? tb.dataset.blockId : null;
+      };
+      const onBlur = () => { editingBlockRef.current = null; };
+      document.addEventListener('focusin', onFocus);
+      document.addEventListener('focusout', onBlur);
+      return () => { document.removeEventListener('focusin', onFocus); document.removeEventListener('focusout', onBlur); };
+    }, []);
+
+    // merge a collaborator's saved blocks into my state (per-block; never touch
+    // the block I'm actively editing; bump rev so text blocks re-sync their HTML)
+    const sig = (b) => (b.kind === 'visual' ? 'v' + JSON.stringify(b.visual) : 't' + b.tag + '' + b.html);
+    function mergeRemote(remote) {
+      setBlocks((local) => {
+        const byId = Object.fromEntries(local.map((b) => [b.id, b]));
+        const editing = editingBlockRef.current;
+        let changed = false;
+        const next = remote.map((rb) => {
+          const lb = byId[rb.id];
+          if (lb && rb.id === editing) return lb; // don't yank text mid-type
+          if (!lb) { changed = true; return rb.kind === 'text' ? { ...rb, rev: 0 } : rb; }
+          if (sig(lb) === sig(rb)) return lb;
+          changed = true;
+          return rb.kind === 'text' ? { ...rb, rev: (lb.rev || 0) + 1 } : rb;
+        });
+        if (!changed && next.length === local.length) return local;
+        return next;
+      });
+    }
+
+    // presence heartbeat (every 4s) — publishes my cursor block, returns the
+    // other active editors, and detects a collaborator's save to pull it in
+    useEffect(() => {
+      let alive = true, ticks = 0;
+      const beat = async () => {
+        try {
+          const res = await window.MarkwiseAPI.heartbeat(docId, editingBlockRef.current);
+          if (!alive) return;
+          setPresence(res.users || []);
+          const remoteV = res.doc && res.doc.updated_at;
+          const newer = remoteV && serverVersionRef.current && new Date(remoteV) > new Date(serverVersionRef.current);
+          if (newer && saveStateRef.current !== 'saving') {
+            const fresh = await window.MarkwiseAPI.get('/api/docs/' + docId);
+            if (!alive) return;
+            serverVersionRef.current = fresh.updated_at || remoteV;
+            if (Array.isArray(fresh.blocks)) mergeRemote(fresh.blocks);
+            window.MarkwiseAPI.listComments(docId).then((rows) => alive && setComments(rows || [])).catch(() => {});
+          } else if (++ticks % 3 === 0) {
+            // refresh threads periodically to catch replies that don't touch blocks
+            window.MarkwiseAPI.listComments(docId).then((rows) => alive && setComments(rows || [])).catch(() => {});
+          }
+        } catch (e) { /* transient — ignore */ }
+      };
+      beat();
+      const t = setInterval(beat, 4000);
+      return () => { alive = false; clearInterval(t); };
+    }, [docId]);
+
+    // soft-lock indicator: outline blocks a collaborator is currently editing
+    useEffect(() => {
+      const locks = {};
+      presence.forEach((u) => { if (u.editing_block) locks[u.editing_block] = u.name || u.email; });
+      document.querySelectorAll('.sheet .tb[data-block-id]').forEach((el) => {
+        const who = locks[el.dataset.blockId];
+        el.classList.toggle('blk-locked', !!who);
+        if (who) el.setAttribute('data-locked-by', who.split(' ')[0]);
+        else el.removeAttribute('data-locked-by');
+      });
+    }, [presence, blocks, space]);
+
+    // ----- comment actions -----
+    const startComment = useCallback(() => {
+      if (!GC) return;
+      const cid = GC.newCid();
+      const ids = blockSelRef.current;
+      const anchor = ids ? GC.wrapBlocks(cid, ids) : GC.wrapRange(cid);
+      if (!anchor) { toast('Select some text to comment on'); return; }
+      clearBlockSel();
+      setFab(null);
+      setCommentDraft({ cid, anchor });
+      setActiveCid(cid); // floating composer appears next to the section
+    }, [toast, clearBlockSel]);
+
+    const submitNewComment = async (body) => {
+      if (!commentDraft) return;
+      const mentions = GC.mentionsIn(body, members);
+      try {
+        const row = await window.MarkwiseAPI.addComment(docId, { cid: commentDraft.cid, anchor: commentDraft.anchor, body, mentions });
+        setComments((cs) => [...cs, row]);
+        setCommentDraft(null);
+      } catch (e) { toast(e.message || 'Could not post comment'); }
+    };
+    const cancelNewComment = () => {
+      if (commentDraft) { GC.unwrap(commentDraft.cid); setCommentDraft(null); }
+      setActiveCid(null);
+    };
+    const replyComment = async (parentId, body) => {
+      const mentions = GC.mentionsIn(body, members);
+      try {
+        const row = await window.MarkwiseAPI.replyComment(docId, parentId, body, mentions);
+        setComments((cs) => [...cs, row]);
+      } catch (e) { toast(e.message || 'Could not reply'); }
+    };
+    const resolveComment = async (commentId, currentlyResolved) => {
+      try {
+        await window.MarkwiseAPI.resolveComment(docId, commentId, currentlyResolved);
+        setComments((cs) => cs.map((c) => (c.id === commentId ? { ...c, resolved: !currentlyResolved } : c)));
+      } catch (e) { toast(e.message || 'Could not update'); }
+    };
+    const deleteComment = async (commentId) => {
+      const top = commentsRef.current.find((c) => c.id === commentId && !c.parent_id);
+      try {
+        const r = await window.MarkwiseAPI.deleteComment(docId, commentId);
+        setComments((cs) => cs.filter((c) => c.id !== commentId && c.parent_id !== commentId));
+        const cid = (top && top.cid) || (r && r.cid);
+        if (cid) GC.unwrap(cid);
+      } catch (e) { toast(e.message || 'Could not delete'); }
+    };
+    const activateThread = (cid) => { setActiveCid(cid); if (GC) GC.scrollToCid(cid); };
+    const closeComments = () => { cancelNewComment(); setShowComments(false); };
+
     // ----- generation flow -----
     async function startGenerate() {
       if (!fab) return;
@@ -569,28 +803,54 @@
             <button className={space === 'canvas' ? 'on' : ''} onClick={() => setSpace('canvas')}>Canvas</button>
           </div>
           <div className="topbar-right">
-            <span style={{ fontSize: 11.5, color: saveState === 'error' ? '#b3422f' : 'var(--grey)' }}>
+            {presence.length ? (
+              <div className="presence-stack" title={presence.map((u) => u.name || u.email).join(', ') + ' also here'}>
+                {presence.slice(0, 4).map((u) => (
+                  <span key={u.id} className="presence-ava" title={(u.name || u.email) + (u.editing_block ? ' — editing' : '')}>
+                    {(u.name || u.email || '?').charAt(0).toUpperCase()}
+                  </span>
+                ))}
+                {presence.length > 4 ? <span className="presence-ava more">+{presence.length - 4}</span> : null}
+              </div>
+            ) : null}
+            <span className="save-state" style={{ color: saveState === 'error' ? '#b3422f' : 'var(--grey)' }}>
               {saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save failed' : 'Saved'}
             </span>
-            <button className="ghost-btn sm" onClick={undo} title="Undo last change (⌘Z)">↺ Undo</button>
-            <button className="ghost-btn sm" onClick={loadGallery} title="Load a document showcasing one example of every visual type">Gallery</button>
-            <button className="ghost-btn sm" onClick={resetDoc} title="Restore the sample document">Reset</button>
+            <button className="icon-btn topbar-icon" onClick={undo} title="Undo last change (⌘Z)" aria-label="Undo">↺</button>
+            <button
+              className={'icon-btn topbar-icon' + (showComments ? ' on' : '')}
+              onClick={() => (showComments ? closeComments() : setShowComments(true))}
+              title="Comments" aria-label="Comments"
+            >
+              💬{comments.filter((c) => !c.parent_id && !c.resolved).length ? <span className="topbar-badge">{comments.filter((c) => !c.parent_id && !c.resolved).length}</span> : null}
+            </button>
+            <span className="topbar-sep"></span>
             <button className="secondary-btn" onClick={() => setDocExport(true)}>Export</button>
             <button className="secondary-btn" onClick={() => setDeck(true)}>▶ Present</button>
             <button className="primary-btn" onClick={() => setShare(true)}>Share</button>
-            {boot.user.is_app_owner ? <a className="ghost-btn sm" href="/admin" style={{ textDecoration: 'none' }}>Admin</a> : null}
+            <div className="more-wrap">
+              <button className="icon-btn topbar-icon" onClick={() => setMoreOpen((o) => !o)} title="More" aria-label="More actions">⋯</button>
+              {moreOpen ? (
+                <div className="more-menu">
+                  {boot.user.is_app_owner ? <a className="more-item" href="/admin">Admin panel</a> : null}
+                  <button className="more-item" onClick={() => { setMoreOpen(false); loadGallery(); }}>Visual gallery</button>
+                  <button className="more-item" onClick={() => { setMoreOpen(false); resetDoc(); }}>Reset document</button>
+                  <div className="more-div"></div>
+                  <button className="more-item danger" onClick={() => { setMoreOpen(false); if (window.confirm('Sign out of Markwise?')) window.MarkwiseAPI.logout(); }}>Sign out</button>
+                </div>
+              ) : null}
+            </div>
             <div
               className="avatar"
-              title={boot.user.email + ' — click to sign out'}
-              style={{ cursor: 'pointer' }}
-              onClick={() => { if (window.confirm('Sign out of Markwise?')) window.MarkwiseAPI.logout(); }}
+              title={boot.user.email}
             >
               {(boot.user.name || 'U').charAt(0).toUpperCase()}
             </div>
           </div>
         </header>
 
-        <div className={'main' + (selVisual ? ' with-panel' : '')}>
+        <div className={'main' + (selVisual ? ' with-panel' : '') + (showComments && space === 'doc' ? ' comments-open' : '')
+          + (!showComments && space === 'doc' && (commentDraft || comments.some((c) => !c.parent_id && !c.resolved)) ? ' comments-float' : '')}>
           {space === 'canvas' ? (
             <Canvas
               blocks={blocksView}
@@ -603,11 +863,12 @@
               onPreviewVariant={(id, p) => setPreviewVar(p == null ? null : { id, ...p })}
             />
           ) : (
-            <main className="doc-scroll" onClick={() => setSelVis(null)}>
-              <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <main className="doc-scroll" onClick={(e) => { setSelVis(null); if (e.target === e.currentTarget) focusLastText(); }}>
+              <div className="sheet" onClick={(e) => { if (e.target === e.currentTarget) focusLastText(); else e.stopPropagation(); }}>
                 <PageMarkers deps={blocksView.length} />
-                {blocksView.map((b) => (
+                {blocksView.map((b, bi) => (
                   <React.Fragment key={b.id}>
+                    {dropIdx === bi ? <div className="drop-line" contentEditable={false}></div> : null}
                     {b.kind === 'text' ? (
                       <TextBlock block={b} onHtml={onHtml} onKey={onTextKey} />
                     ) : (
@@ -620,6 +881,8 @@
                         onDelete={deleteVisualBlock}
                         onPatch={(patch) => patchVisual(b.visual.id, patch)}
                         onPreviewVariant={(p) => setPreviewVar(p == null ? null : { id: b.visual.id, ...p })}
+                        onDragStart={startBlockDrag}
+                        dragging={dragBlk === b.id}
                       />
                     )}
                     <div className="block-gap" contentEditable={false}>
@@ -627,7 +890,24 @@
                     </div>
                   </React.Fragment>
                 ))}
+                {dropIdx === blocksView.length ? <div className="drop-line" contentEditable={false}></div> : null}
               </div>
+              {!showComments && GC && (commentDraft || comments.some((c) => !c.parent_id && !c.resolved)) ? (
+                <GC.FloatingComments
+                  comments={comments}
+                  draft={commentDraft}
+                  members={members}
+                  user={boot.user}
+                  activeCid={activeCid}
+                  docRev={blocks}
+                  onActivate={activateThread}
+                  onSubmitNew={submitNewComment}
+                  onCancelNew={cancelNewComment}
+                  onReply={replyComment}
+                  onResolve={resolveComment}
+                  onDelete={deleteComment}
+                />
+              ) : null}
             </main>
           )}
           {selVisual ? (
@@ -642,9 +922,25 @@
               regenBusy={regenBusy}
             />
           ) : null}
+          {showComments && space === 'doc' && GC ? (
+            <GC.CommentsRail
+              comments={comments}
+              draft={commentDraft}
+              members={members}
+              user={boot.user}
+              activeCid={activeCid}
+              onActivate={activateThread}
+              onSubmitNew={submitNewComment}
+              onCancelNew={cancelNewComment}
+              onReply={replyComment}
+              onResolve={resolveComment}
+              onDelete={deleteComment}
+              onClose={closeComments}
+            />
+          ) : null}
         </div>
 
-        <FormatBar fab={fab} onTag={onTag} />
+        <FormatBar fab={fab} onTag={onTag} onComment={startComment} />
         <VizFab fab={fab} onVisualize={startGenerate} />
         {hint && !picker ? <HintPill onDismiss={() => { setHint(false); localStorage.setItem(LS_HINT, '1'); }} /> : null}
         {picker ? (

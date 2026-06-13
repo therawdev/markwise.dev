@@ -40,8 +40,10 @@
       useEffect(() => {
         if (ref.current && ref.current.innerHTML !== block.html) ref.current.innerHTML = block.html;
         if (block.autoFocus && ref.current) ref.current.focus();
+        // block.rev is bumped when a collaborator's edit is merged in, forcing
+        // this uncontrolled contenteditable to re-sync its HTML from state.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [block.id, block.tag]);
+      }, [block.id, block.tag, block.rev]);
       return React.createElement(block.tag, {
         className: 'tb tb-' + block.tag,
         'data-block-id': block.id,
@@ -53,7 +55,7 @@
         onKeyDown: (e) => onKey && onKey(block.id, e),
       });
     },
-    (a, b) => a.block.id === b.block.id && a.block.tag === b.block.tag
+    (a, b) => a.block.id === b.block.id && a.block.tag === b.block.tag && a.block.rev === b.block.rev
   );
 
   // a gallery exists if the type has variants or same-category siblings
@@ -64,7 +66,7 @@
   }
 
   // ---------- visual block ----------
-  function VisualBlock({ block, baseVisual, selected, onSelect, onExport, onDelete, onPatch, onPreviewVariant }) {
+  function VisualBlock({ block, baseVisual, selected, onSelect, onExport, onDelete, onPatch, onPreviewVariant, onDragStart, dragging }) {
     const v = block.visual;
     const ref = useRef(null);
     const [showLayouts, setShowLayouts] = useState(false);
@@ -119,12 +121,18 @@
     return (
       <figure
         ref={ref}
-        className={'vis-block' + (selected ? ' selected' : '')}
+        className={'vis-block' + (selected ? ' selected' : '') + (dragging ? ' dragging' : '')}
         style={{ width: (v.width || 100) + '%' }}
         data-block-id={block.id}
         contentEditable={false}
         onClick={(e) => { e.stopPropagation(); }}
       >
+        {onDragStart ? (
+          <button className="vis-drag" title="Drag to move this visual" aria-label="Drag to reorder"
+            onPointerDown={(e) => onDragStart(block.id, e)} onClick={(e) => e.stopPropagation()}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>
+          </button>
+        ) : null}
         <window.Diagram visual={v} editable={true} onPatch={onPatch} onOpenPanel={() => onSelect(v.id)} />
         {showLayouts ? (
           <window.GlyphVariants.VariantGallery

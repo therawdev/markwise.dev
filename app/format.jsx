@@ -33,15 +33,32 @@
     return true;
   }
 
-  function FormatBar({ fab, onTag }) {
+  // A speech-bubble icon shared by the toolbar buttons.
+  const CommentIcon = () => (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.5 8.38 8.38 0 0 1-3.8-.9L3 20l1.9-5.2A8.38 8.38 0 0 1 4 11.5a8.5 8.5 0 0 1 17 0z" /></svg>
+  );
+
+  function FormatBar({ fab, onTag, onComment }) {
     // hooks must run unconditionally
-    const [mode, setMode] = useState(null);   // null | 'link' | 'comment'
+    const [mode, setMode] = useState(null);   // null | 'link'
     const [val, setVal] = useState('');
     const savedRange = useRef(null);
     useEffect(() => { setMode(null); setVal(''); }, [fab && fab.blockId, fab && fab.text]);
 
-    if (!fab || fab.multi) return null; // multi-block selection shows only the Visualize circle
+    if (!fab) return null;
     const x = Math.min(Math.max(fab.x, 230), window.innerWidth - 230);
+
+    // Multi-section (whole-block) selection: offer just a Comment action.
+    if (fab.multi) {
+      return (
+        <div className="fmtbar fmtbar-mini" style={{ left: x, top: Math.max(fab.y, 70) }} onMouseDown={(e) => e.preventDefault()}>
+          <button className="fmt-btn fmt-comment" title="Comment on these sections"
+            onMouseDown={(e) => { e.preventDefault(); onComment && onComment(); }}>
+            <CommentIcon /> <span style={{ fontSize: 12, fontWeight: 600 }}>Comment</span>
+          </button>
+        </div>
+      );
+    }
 
     const exec = (cmd, value) => (e) => {
       e.preventDefault();
@@ -66,25 +83,19 @@
       if (url) { restore(); document.execCommand('createLink', false, /^https?:\/\//i.test(url) ? url : 'https://' + url); }
       setMode(null);
     };
-    const applyComment = () => {
-      const note = val.trim();
-      if (note) { restore(); wrapSelection('mark', 'cmt', { title: note, 'data-note': note }); }
-      setMode(null);
-    };
 
     const Btn = ({ label, title, on, onDown, children, style }) => (
       <button className={'fmt-btn' + (on ? ' on' : '')} title={title} style={style}
         onMouseDown={onDown}>{children || label}</button>
     );
 
-    if (mode) {
-      const apply = mode === 'link' ? applyLink : applyComment;
+    if (mode === 'link') {
       return (
         <div className="fmtbar fmtbar-input" style={{ left: x, top: Math.max(fab.y, 70) }} onMouseDown={(e) => { if (e.target.tagName !== 'INPUT') e.preventDefault(); }}>
-          <input className="fmt-input" autoFocus placeholder={mode === 'link' ? 'Paste or type a link…' : 'Add a note…'}
+          <input className="fmt-input" autoFocus placeholder="Paste or type a link…"
             value={val} onChange={(e) => setVal(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } if (e.key === 'Escape') setMode(null); }} />
-          <button className="fmt-apply" onMouseDown={(e) => { e.preventDefault(); apply(); }}>{mode === 'link' ? 'Link' : 'Comment'}</button>
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyLink(); } if (e.key === 'Escape') setMode(null); }} />
+          <button className="fmt-apply" onMouseDown={(e) => { e.preventDefault(); applyLink(); }}>Link</button>
         </div>
       );
     }
@@ -117,9 +128,7 @@
         <Btn title="Add link" onDown={enterMode('link')}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
         </Btn>
-        <Btn title="Comment" onDown={enterMode('comment')}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-9 8.5 8.38 8.38 0 0 1-3.8-.9L3 20l1.9-5.2A8.38 8.38 0 0 1 4 11.5a8.5 8.5 0 0 1 17 0z"/></svg>
-        </Btn>
+        <Btn title="Comment" onDown={(e) => { e.preventDefault(); onComment && onComment(); }}><CommentIcon /></Btn>
       </div>
     );
   }

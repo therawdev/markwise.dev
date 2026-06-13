@@ -62,6 +62,22 @@
 
     saveDoc(id, patch) { return req('PUT', '/api/docs/' + id, patch); },
     logout: async () => { await req('POST', '/api/auth/logout'); location.href = '/login'; },
+
+    // ---- comments ----
+    listComments(docId) { return req('GET', '/api/docs/' + docId + '/comments'); },
+    addComment(docId, payload) { return req('POST', '/api/docs/' + docId + '/comments', payload); },
+    replyComment(docId, parentId, body, mentions) {
+      return req('POST', '/api/docs/' + docId + '/comments', { parent_id: parentId, body, mentions: mentions || [] });
+    },
+    resolveComment(docId, commentId, reopen) {
+      return req('POST', '/api/docs/' + docId + '/comments/' + commentId + '/resolve', { reopen: !!reopen });
+    },
+    deleteComment(docId, commentId) { return req('DELETE', '/api/docs/' + docId + '/comments/' + commentId); },
+
+    // ---- presence (heartbeat → others + doc version) ----
+    heartbeat(docId, editingBlock) {
+      return req('POST', '/api/docs/' + docId + '/presence', { editing_block: editingBlock || null });
+    },
   };
 
   window.MarkwiseAPI = API;
