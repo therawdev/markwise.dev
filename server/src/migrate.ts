@@ -153,6 +153,59 @@ async function migrate() {
     });
   }
 
+  // Comments: anchored threads on a document. A top-level comment carries an
+  // anchor (the block ids it spans + the quoted text) and a `cid` matching the
+  // <mark data-cid> wrapper in the document HTML. Replies set parent_id and
+  // inherit the thread's anchor. resolved applies to the top-level comment.
+  if (!(await has('comments'))) {
+    await db.schema.createTable('comments', (t) => {
+      t.increments('id');
+      t.integer('document_id').notNullable().references('documents.id').onDelete('CASCADE');
+      t.integer('parent_id').references('comments.id').onDelete('CASCADE'); // null = top-level
+      t.string('cid'); // DOM anchor id (top-level only)
+      t.integer('author_id').references('users.id').onDelete('SET NULL');
+      t.jsonb('anchor').notNullable().defaultTo('{}'); // { blockIds:[], quote:'' }
+      t.text('body').notNullable();
+      t.boolean('resolved').notNullable().defaultTo(false);
+      t.integer('resolved_by').references('users.id').onDelete('SET NULL');
+      t.timestamp('resolved_at');
+      t.timestamp('created_at').defaultTo(db.fn.now());
+      t.timestamp('updated_at').defaultTo(db.fn.now());
+      t.index(['document_id']);
+    });
+  }
+
+  // Presence: who is currently in a document, and which block they are editing
+  // (a soft lock — advisory, not enforced). Stale rows are ignored by last_seen.
+  if (!(await has('doc_presence'))) {
+    await db.schema.createTable('doc_presence', (t) => {
+      t.increments('id');
+      t.integer('document_id').notNullable().references('documents.id').onDelete('CASCADE');
+      t.integer('user_id').notNullable().references('users.id').onDelete('CASCADE');
+      t.string('editing_block'); // block id currently focused, or null
+      t.timestamp('last_seen').defaultTo(db.fn.now());
+      t.unique(['document_id', 'user_id']);
+    });
+  }
+
+  // Backfill: every role that can edit documents should also be able to comment,
+  // and the immutable Owner role gets the full (now-larger) permission set.
+  const roles = await db('roles').select('id', 'name', 'is_system', 'permissions');
+  for (const r of roles) {
+    const perms: string[] = typeof r.permissions === 'string' ? JSON.parse(r.permissions) : r.permissions || [];
+    let next = perms;
+    if (r.is_system && r.name === 'Owner') {
+      // keep Owner all-powerful as the catalog grows
+      const { ALL_PERMISSIONS } = await import('./permissions.js');
+      next = [...ALL_PERMISSIONS];
+    } else if (perms.includes('doc:edit') && !perms.includes('doc:comment')) {
+      next = [...perms, 'doc:comment'];
+    }
+    if (next !== perms) {
+      await db('roles').where({ id: r.id }).update({ permissions: JSON.stringify(next) });
+    }
+  }
+
   console.log('Migrations complete.');
   await db.destroy();
 }

@@ -3,6 +3,7 @@ export const PERMISSIONS = [
   { key: 'doc:view', label: 'View documents' },
   { key: 'doc:create', label: 'Create documents' },
   { key: 'doc:edit', label: 'Edit documents' },
+  { key: 'doc:comment', label: 'Comment on documents' },
   { key: 'doc:delete', label: 'Delete documents' },
   { key: 'doc:export', label: 'Export documents (PDF/Word/Markdown)' },
   { key: 'doc:share', label: 'Share documents' },
@@ -22,7 +23,7 @@ export const DEFAULT_ROLES: { name: string; permissions: PermissionKey[] }[] = [
   { name: 'Owner', permissions: [...ALL_PERMISSIONS] },
   {
     name: 'User',
-    permissions: ['doc:view', 'doc:create', 'doc:edit', 'doc:export', 'doc:share', 'ai:generate'],
+    permissions: ['doc:view', 'doc:create', 'doc:edit', 'doc:comment', 'doc:export', 'doc:share', 'ai:generate'],
   },
 ];
 

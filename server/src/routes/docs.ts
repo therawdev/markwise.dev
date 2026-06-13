@@ -139,13 +139,14 @@ docsRouter.put('/:id', async (req, res) => {
   if (req.body?.title != null) patch.title = String(req.body.title).slice(0, 200);
   if (req.body?.blocks != null) patch.blocks = JSON.stringify(req.body.blocks);
   if (req.body?.starred != null) patch.starred = Boolean(req.body.starred);
-  await db('documents').where({ id: doc.id }).update(patch);
+  const [updated] = await db('documents').where({ id: doc.id }).update(patch).returning('updated_at');
 
   if (req.body?.title != null) {
     await audit(req.user!.id, 'doc.update', `doc:${doc.id}`, { title: String(req.body.title).slice(0, 200) });
   }
 
-  res.json({ ok: true });
+  // updated_at lets collaborators detect this save and pull the change.
+  res.json({ ok: true, updated_at: (updated && (updated as any).updated_at) || null });
 });
 
 // ---- duplicate ----
@@ -264,6 +265,145 @@ docsRouter.delete('/:id/shares/:shareId', async (req, res) => {
   }
   await db('doc_shares').where({ id: Number(req.params.shareId), document_id: doc.id }).delete();
   res.json({ ok: true });
+});
+
+// ===================== Comments (anchored threads) =====================
+
+function normAnchor(a: any) {
+  return {
+    blockIds: Array.isArray(a?.blockIds) ? a.blockIds.map((x: unknown) => String(x)).slice(0, 50) : [],
+    quote: String(a?.quote || '').slice(0, 300),
+  };
+}
+
+// ---- list every comment (threads + replies) on a document ----
+docsRouter.get('/:id/comments', async (req, res) => {
+  const doc = await db('documents').where({ id: Number(req.params.id) }).first();
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (!(await canAccessDoc(req.user!, doc, 'doc:view'))) return res.status(403).json({ error: 'No access' });
+  const rows = await db('comments')
+    .leftJoin('users', 'users.id', 'comments.author_id')
+    .where('comments.document_id', doc.id)
+    .orderBy('comments.id', 'asc')
+    .select('comments.*', 'users.name as author_name', 'users.email as author_email');
+  res.json(rows.map((r) => ({ ...r, anchor: typeof r.anchor === 'string' ? JSON.parse(r.anchor) : r.anchor })));
+});
+
+// ---- create a top-level comment (with anchor + cid) or a reply (parent_id) ----
+docsRouter.post('/:id/comments', async (req, res) => {
+  const doc = await db('documents').where({ id: Number(req.params.id) }).first();
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (!(await canAccessDoc(req.user!, doc, 'doc:comment'))) {
+    return res.status(403).json({ error: 'You need comment access on this document' });
+  }
+  const body = String(req.body?.body || '').trim().slice(0, 4000);
+  if (!body) return res.status(400).json({ error: 'Comment is empty' });
+
+  const parentId = req.body?.parent_id ? Number(req.body.parent_id) : null;
+  let cid: string | null = null;
+  let anchor = { blockIds: [] as string[], quote: '' };
+  if (parentId) {
+    const parent = await db('comments').where({ id: parentId, document_id: doc.id }).first();
+    if (!parent) return res.status(404).json({ error: 'Thread not found' });
+  } else {
+    cid = req.body?.cid ? String(req.body.cid).slice(0, 40) : null;
+    anchor = normAnchor(req.body?.anchor);
+  }
+
+  const [row] = await db('comments')
+    .insert({
+      document_id: doc.id,
+      parent_id: parentId,
+      cid,
+      author_id: req.user!.id,
+      anchor: JSON.stringify(anchor),
+      body,
+    })
+    .returning('*');
+
+  // Notify: the doc owner, everyone already in the thread, and any @mentions —
+  // never the author. These land in the existing bell via audit_logs.
+  const mentionIds: number[] = Array.isArray(req.body?.mentions)
+    ? req.body.mentions.map((x: unknown) => Number(x)).filter((n: number) => Number.isFinite(n))
+    : [];
+  const notify = new Set<number>();
+  if (doc.owner_id !== req.user!.id) notify.add(doc.owner_id);
+  if (parentId) {
+    const participants = await db('comments')
+      .where({ document_id: doc.id })
+      .andWhere((q) => q.where('id', parentId).orWhere('parent_id', parentId))
+      .select('author_id');
+    participants.forEach((p) => p.author_id && notify.add(p.author_id));
+  }
+  mentionIds.forEach((m) => notify.add(m));
+  notify.delete(req.user!.id);
+  for (const uid of notify) {
+    const action = mentionIds.includes(uid) ? 'doc.mention' : 'doc.comment';
+    await audit(req.user!.id, action, `user:${uid}`, { doc: doc.title, doc_id: doc.id, snippet: body.slice(0, 100) });
+  }
+
+  res.json({
+    ...row,
+    anchor,
+    author_name: req.user!.name,
+    author_email: req.user!.email,
+  });
+});
+
+// ---- resolve / reopen a thread (top-level comment) ----
+docsRouter.post('/:id/comments/:commentId/resolve', async (req, res) => {
+  const doc = await db('documents').where({ id: Number(req.params.id) }).first();
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (!(await canAccessDoc(req.user!, doc, 'doc:comment'))) return res.status(403).json({ error: 'No access' });
+  const reopen = req.body?.reopen === true;
+  await db('comments')
+    .where({ id: Number(req.params.commentId), document_id: doc.id })
+    .whereNull('parent_id')
+    .update(
+      reopen
+        ? { resolved: false, resolved_by: null, resolved_at: null, updated_at: db.fn.now() }
+        : { resolved: true, resolved_by: req.user!.id, resolved_at: db.fn.now(), updated_at: db.fn.now() }
+    );
+  res.json({ ok: true });
+});
+
+// ---- delete a comment (author, doc owner, or someone who can delete the doc) ----
+docsRouter.delete('/:id/comments/:commentId', async (req, res) => {
+  const doc = await db('documents').where({ id: Number(req.params.id) }).first();
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  const comment = await db('comments').where({ id: Number(req.params.commentId), document_id: doc.id }).first();
+  if (!comment) return res.status(404).json({ error: 'Comment not found' });
+  const canDelete =
+    comment.author_id === req.user!.id || (await canAccessDoc(req.user!, doc, 'doc:delete'));
+  if (!canDelete) return res.status(403).json({ error: 'You can only delete your own comments' });
+  await db('comments').where({ id: comment.id }).delete(); // replies cascade
+  res.json({ ok: true, cid: comment.cid, parent_id: comment.parent_id });
+});
+
+// ===================== Presence (heartbeat + soft locks) =====================
+
+// One call does both: record my heartbeat (and which block I'm editing) and
+// return the other active editors + the doc's current updated_at for sync.
+docsRouter.post('/:id/presence', async (req, res) => {
+  const doc = await db('documents').where({ id: Number(req.params.id) }).first();
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (!(await canAccessDoc(req.user!, doc, 'doc:view'))) return res.status(403).json({ error: 'No access' });
+
+  const editingBlock = req.body?.editing_block ? String(req.body.editing_block).slice(0, 60) : null;
+  await db('doc_presence')
+    .insert({ document_id: doc.id, user_id: req.user!.id, editing_block: editingBlock, last_seen: db.fn.now() })
+    .onConflict(['document_id', 'user_id'])
+    .merge({ editing_block: editingBlock, last_seen: db.fn.now() });
+
+  const cutoff = new Date(Date.now() - 15000); // active = seen in the last 15s
+  const others = await db('doc_presence')
+    .join('users', 'users.id', 'doc_presence.user_id')
+    .where('doc_presence.document_id', doc.id)
+    .andWhere('doc_presence.last_seen', '>', cutoff)
+    .andWhereNot('doc_presence.user_id', req.user!.id)
+    .select('users.id', 'users.name', 'users.email', 'doc_presence.editing_block');
+
+  res.json({ users: others, doc: { updated_at: doc.updated_at } });
 });
 
 // ---- soft delete ----
