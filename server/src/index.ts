@@ -72,9 +72,11 @@ app.get(['/docs', '/admin', '/settings', '/login', '/signup', '/org/:id', '/invi
   res.sendFile(spaShell);
 });
 
-// Public read-only doc viewer at a clean URL: /share/<token> → share.html shell
-// (share.jsx reads the token from the path). Legacy /share.html?t= still works.
-app.get('/share/:token', (_req, res) => {
+// Read-only doc viewers, both served by the share.html shell (share.jsx picks
+// the data source from the path):
+//   /share/<token> — public, anyone with the link (fetches /api/shared/<token>)
+//   /doc/<id>      — authenticated, for people a doc was shared with by email
+app.get(['/share/:token', '/doc/:id'], (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(webRoot, 'share.html'));
 });

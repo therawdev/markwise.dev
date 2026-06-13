@@ -357,12 +357,38 @@
     const doc = window.MW_DOC || {};
     const [token, setToken] = useState(doc.share_token || null);
     const [busy, setBusy] = useState(false);
+    const [shares, setShares] = useState([]);
+    const [email, setEmail] = useState('');
+    const [emailBusy, setEmailBusy] = useState(false);
     useEffect(() => {
       const k = (e) => { if (e.key === 'Escape') onClose(); };
       window.addEventListener('keydown', k);
       return () => window.removeEventListener('keydown', k);
     }, [onClose]);
+    useEffect(() => {
+      window.MarkwiseAPI.get('/api/docs/' + doc.id + '/shares').then(setShares).catch(() => {});
+    }, [doc.id]);
     const url = token ? location.origin + '/share/' + token : null;
+    const addEmail = async (e) => {
+      if (e) e.preventDefault();
+      const v = email.trim();
+      if (!v) return;
+      setEmailBusy(true);
+      try {
+        const row = await window.MarkwiseAPI.post('/api/docs/' + doc.id + '/shares', { email: v });
+        setShares((s) => [row, ...s]);
+        setEmail('');
+        toast('Shared with ' + row.email);
+      } catch (err) { toast(err.message || 'Could not share'); }
+      setEmailBusy(false);
+    };
+    const removeEmail = async (s) => {
+      try {
+        await window.MarkwiseAPI.del('/api/docs/' + doc.id + '/shares/' + s.id);
+        setShares((cur) => cur.filter((x) => x.id !== s.id));
+        toast('Removed ' + s.email);
+      } catch (err) { toast(err.message || 'Could not remove'); }
+    };
     const create = async () => {
       setBusy(true);
       try {
@@ -404,6 +430,25 @@
               <button className="primary-btn" disabled={busy} onClick={create}>{busy ? 'Creating…' : 'Create share link'}</button>
             </div>
           )}
+          <div className="share-divider"></div>
+          <div className="share-people">
+            <div className="modal-sub" style={{ marginBottom: 8 }}>Or invite specific people to view — they’ll need to sign in with that email.</div>
+            <form className="share-row" onSubmit={addEmail}>
+              <input className="fld" type="email" placeholder="name@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <button className="secondary-btn" type="submit" disabled={emailBusy || !email.trim()}>{emailBusy ? 'Adding…' : 'Invite'}</button>
+            </form>
+            {shares.length ? (
+              <ul className="share-list">
+                {shares.map((s) => (
+                  <li key={s.id}>
+                    <span className="share-email">{s.email}</span>
+                    <span className="share-can">can view</span>
+                    <button className="icon-btn del" title="Remove access" onClick={() => removeEmail(s)}>✕</button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
           <div className="share-note">Individual visuals can be exported as PNG or SVG from their Edit panel.</div>
         </div>
       </div>

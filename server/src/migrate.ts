@@ -141,6 +141,18 @@ async function migrate() {
     });
   }
 
+  // Per-email document shares (view-only access for specific people)
+  if (!(await has('doc_shares'))) {
+    await db.schema.createTable('doc_shares', (t) => {
+      t.increments('id');
+      t.integer('document_id').notNullable().references('documents.id').onDelete('CASCADE');
+      t.string('email').notNullable(); // lowercased recipient email
+      t.integer('created_by').references('users.id').onDelete('SET NULL');
+      t.timestamp('created_at').defaultTo(db.fn.now());
+      t.unique(['document_id', 'email']);
+    });
+  }
+
   console.log('Migrations complete.');
   await db.destroy();
 }

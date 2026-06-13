@@ -108,6 +108,7 @@
     'role.create': 'created a role', 'role.update': 'updated a role', 'role.delete': 'deleted a role',
     'doc.create': 'created a document', 'doc.update': 'renamed a document', 'doc.delete': 'deleted a document',
     'doc.restore': 'restored a document', 'doc.purge': 'permanently deleted a document', 'doc.share': 'shared a document',
+    'doc.share_email': 'shared a document with you',
     'company.create': 'created a company', 'company.update': 'updated company settings', 'company.delete': 'deleted a company',
     'billing.update': 'changed the plan', 'admin.user_status': 'changed a user’s status',
     'admin.company_status': 'changed a company’s status', 'admin.ai_provider': 'switched the AI provider',
@@ -151,11 +152,16 @@
               <div className="notif-empty">Nothing yet — activity from your teams shows up here.</div>
             ) : data.items.slice(0, 10).map((e, i) => {
               const who = e.actor_email || 'someone';
+              // pull a human noun out of the detail to make it read like a notification
+              let d = e.detail;
+              if (typeof d === 'string') { try { d = JSON.parse(d); } catch (x) { d = null; } }
+              const noun = d && (d.doc || d.name || d.company || d.role);
               return (
                 <div className="notif-item" key={e.id || i}>
                   <MWAvatar name={who.split('@')[0].replace(/[._]/g, ' ')} size={26} />
                   <span>
-                    <b>{who === me.email ? 'You' : who}</b> {MW_ACTION_LABELS[e.action] || e.action}
+                    <b>{who}</b> {MW_ACTION_LABELS[e.action] || e.action}
+                    {noun ? <span> “{noun}”</span> : null}
                     <span className="when"> · {mwFmtWhen(e.created_at)}</span>
                   </span>
                 </div>

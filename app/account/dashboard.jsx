@@ -8,6 +8,7 @@
     // ---- document state ----
     const [docs, setDocs] = useState([]);
     const [trash, setTrash] = useState([]);
+    const [sharedWithMe, setSharedWithMe] = useState([]);
     const [loading, setLoading] = useState(true);
 
     // ---- toolbar state ----
@@ -88,6 +89,7 @@
     useEffect(() => {
       setLoading(true);
       Promise.all([loadDocs(), loadTrash()]).finally(() => setLoading(false));
+      window.MarkwiseAPI.get('/api/docs/shared-with-me').then(setSharedWithMe).catch(() => {});
     }, []);
 
     // app owner: fetch all companies from admin endpoint
@@ -443,6 +445,27 @@
               )}
             </div>
           </MWSection>
+
+          {/* ---- Shared with me (view-only docs others shared by email) ---- */}
+          {sharedWithMe.length ? (
+            <MWSection title="Shared with me" sub="Documents people shared with you to view.">
+              <div className="card">
+                <table className="tbl">
+                  <thead><tr><th>Title</th><th>Shared by</th><th>Updated</th><th className="num"></th></tr></thead>
+                  <tbody>
+                    {sharedWithMe.map((d) => (
+                      <tr key={d.id}>
+                        <td><a className="doc-link" href={'/doc/' + d.id}>{d.title}</a></td>
+                        <td className="dim">{d.owner_name || d.owner_email}</td>
+                        <td className="dim">{window.mwAgo(d.updated_at)}</td>
+                        <td className="num"><a className="ghost-btn sm as-link" href={'/doc/' + d.id}>View</a></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </MWSection>
+          ) : null}
 
           {/* ---- Companies section ---- */}
           <MWSection

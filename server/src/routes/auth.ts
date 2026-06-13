@@ -112,22 +112,22 @@ authRouter.get('/me', requireAuth, async (req, res) => {
   });
 });
 
-// ---- notifications: recent audit events relevant to me, with an unread marker ----
+// ---- notifications: things OTHER people did that concern me ----
+// Notifications are NOT an audit log: they exclude my own actions and only
+// surface events directed at me (target user:me) or happening in my companies.
 authRouter.get('/notifications', requireAuth, async (req, res) => {
   const me = req.user!;
   const myCompanyIds = (await db('memberships').where({ user_id: me.id }).select('company_id')).map((r) => r.company_id);
-  let q = db('audit_logs')
+  const items = await db('audit_logs')
     .leftJoin('users', 'users.id', 'audit_logs.actor_id')
+    .whereNot('audit_logs.actor_id', me.id) // never notify me about what I did
+    .andWhere((b) => {
+      b.where('audit_logs.target', `user:${me.id}`);
+      if (myCompanyIds.length) b.orWhereIn('audit_logs.target', myCompanyIds.map((id) => `company:${id}`));
+    })
     .orderBy('audit_logs.id', 'desc')
     .limit(15)
-    .select('audit_logs.id', 'audit_logs.action', 'audit_logs.target', 'audit_logs.created_at', 'users.email as actor_email');
-  if (!me.is_app_owner) {
-    q = q.where((b) => {
-      b.where('audit_logs.actor_id', me.id).orWhere('audit_logs.target', `user:${me.id}`);
-      if (myCompanyIds.length) b.orWhereIn('audit_logs.target', myCompanyIds.map((id) => `company:${id}`));
-    });
-  }
-  const items = await q;
+    .select('audit_logs.id', 'audit_logs.action', 'audit_logs.target', 'audit_logs.detail', 'audit_logs.created_at', 'users.email as actor_email');
   const seenAt = (me as any).notif_seen_at ? new Date((me as any).notif_seen_at).getTime() : 0;
   const unread = items.filter((i) => new Date(i.created_at).getTime() > seenAt).length;
   res.json({ items, unread });

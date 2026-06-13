@@ -41,27 +41,49 @@
 
   async function boot() {
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    // Clean URL: /share/<token>. Falls back to the legacy /share.html?t=<token>.
-    const fromPath = (location.pathname.match(/^\/share\/(.+)$/) || [])[1];
-    const token = fromPath ? decodeURIComponent(fromPath) : new URLSearchParams(location.search).get('t');
-    if (!token) {
+    // Two read-only modes share this viewer:
+    //   /doc/<id>   — authenticated, for people a doc was shared with by email
+    //   /share/<t>  — public link (also legacy /share.html?t=<t>)
+    const docMatch = location.pathname.match(/^\/doc\/(\d+)$/);
+    const tokenFromPath = (location.pathname.match(/^\/share\/(.+)$/) || [])[1];
+    const token = tokenFromPath ? decodeURIComponent(tokenFromPath) : new URLSearchParams(location.search).get('t');
+    const endpoint = docMatch ? '/api/docs/' + docMatch[1] + '/view' : token ? '/api/shared/' + encodeURIComponent(token) : null;
+    if (docMatch) tuneTopbarForMember();
+    if (!endpoint) {
       root.render(<div className="state">This share link is incomplete.</div>);
       return;
     }
     try {
-      const r = await fetch('/api/shared/' + encodeURIComponent(token));
+      const r = await fetch(endpoint, { credentials: 'same-origin' });
+      if (r.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname); return; }
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Not found');
       const doc = await r.json();
       document.title = doc.title + ' — Markwise';
       root.render(
         <React.Fragment>
           <Viewer doc={doc} />
-          <div className="footer-note">Made with <a href="/signup">Markwise</a> — write, visualize, present.</div>
+          {docMatch
+            ? <div className="footer-note">Shared with you · <a href="/docs">your documents</a></div>
+            : <div className="footer-note">Made with <a href="/signup">Markwise</a> — write, visualize, present.</div>}
         </React.Fragment>
       );
     } catch (e) {
-      root.render(<div className="state">This share link is invalid or has been revoked.</div>);
+      root.render(<div className="state">{docMatch
+        ? 'You don’t have access to this document, or it no longer exists.'
+        : 'This share link is invalid or has been revoked.'}</div>);
     }
   }
+
+  // For the authenticated /doc/<id> view, swap the public "Try Markwise" chrome
+  // for member chrome (this person is signed in).
+  function tuneTopbarForMember() {
+    const brand = document.querySelector('.topbar .brand');
+    if (brand) brand.setAttribute('href', '/docs');
+    const pill = document.querySelector('.topbar .pill');
+    if (pill) pill.textContent = 'Read-only';
+    const cta = document.querySelector('.topbar .primary-btn');
+    if (cta) { cta.textContent = '← Documents'; cta.setAttribute('href', '/docs'); }
+  }
+
   boot();
 })();

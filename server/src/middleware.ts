@@ -61,11 +61,18 @@ export async function hasPermission(user: AuthedUser, companyId: number, perm: P
  */
 export async function canAccessDoc(
   user: AuthedUser,
-  doc: { owner_id: number; company_id: number | null },
+  doc: { id?: number; owner_id: number; company_id: number | null },
   perm: PermissionKey
 ): Promise<boolean> {
   if (user.is_app_owner) return true;
-  if (doc.company_id == null) return doc.owner_id === user.id;
   if (doc.owner_id === user.id) return true;
+  // Per-email shares grant read-only (view) access to a specific document.
+  if (perm === 'doc:view' && doc.id != null) {
+    const shared = await db('doc_shares')
+      .whereRaw('document_id = ? and lower(email) = ?', [doc.id, user.email.toLowerCase()])
+      .first();
+    if (shared) return true;
+  }
+  if (doc.company_id == null) return false; // personal doc, not owner, not shared
   return hasPermission(user, doc.company_id, perm);
 }
