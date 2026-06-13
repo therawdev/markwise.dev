@@ -399,6 +399,7 @@
     // when this browser has no local deck, wait for the server lookup before auto-generating, so a
     // deck saved on another device restores instead of being regenerated
     const [serverChecked, setServerChecked] = useState(() => !!snap0 || !docId || !(window.MarkwiseAPI && window.MarkwiseAPI.getDeck));
+    const [genNonce, setGenNonce] = useState(0); // bumped by "Regenerate" to re-run the whole generation
     const [revIdx, setRevIdx] = useState(0);
     const [edited, setEdited] = useState(() => (snap0 && snap0.edited) || {});   // oi → {title, paras, sub} user overrides
     const [remarks, setRemarks] = useState({}); // oi → free-text remarks fed to regeneration
@@ -555,7 +556,7 @@
         if (!dead) setDistilled((prev) => ({ ...prev, [n.oi]: { ...(prev[n.oi] || {}), key: slideKey(sl), [n.type]: val } }));
       })).finally(() => { if (!dead) { setAiBusy(false); advance(); } });
       return () => { dead = true; };
-    }, [aiOn, baseSlides, serverChecked]); // eslint-disable-line — distilled read intentionally from mount snapshot to avoid a regen loop
+    }, [aiOn, baseSlides, serverChecked, genNonce]); // eslint-disable-line — distilled read intentionally from mount snapshot to avoid a regen loop
     useEffect(() => { localStorage.setItem('glyph-deck-idx', String(cur)); }, [cur]);
 
     const move = (si, dir) => {
@@ -599,6 +600,20 @@
     // choosing a content arrangement (or Auto) also clears any applied layout — the two are
     // alternative ways to arrange a slide, so the simple modes give a one-click way out of a layout
     const setMode = (oi, m) => { dirtyRef.current = true; setOv((prev) => ({ ...prev, [oi]: { ...(prev[oi] || {}), mode: m, layout: null } })); };
+    // re-run the whole generation flow from the document: drop cached AI bullets + text edits and
+    // show the "generating" screen again (each section regenerates), keeping theme/layout/visual work
+    const regenerateAll = () => {
+      dirtyRef.current = true;
+      for (const k in condenseCache) delete condenseCache[k]; // force fresh AI, not the session cache
+      setDistilled({});
+      setEdited({});
+      setRemarks({});
+      setRevIdx(0);
+      skipAutoGenRef.current = false;
+      restoredBuiltRef.current = false;
+      setGenNonce((n) => n + 1);
+      setPhase('gen');
+    };
     // edit a slide's diagram (move/recolor/resize elements, just like in the doc) — persisted
     // as a per-slide visual override so the source document is left untouched
     const patchVisual = (oi, patch) => { dirtyRef.current = true; setOv((prev) => {
@@ -747,7 +762,8 @@
             {phase === 'deck' ? (
               <React.Fragment>
                 <button className={'ghost-btn sm' + (aiOn ? ' ai-on' : '')} title="Rewrite long slide text as short AI bullet points (also used for PPTX & PDF export)" onClick={() => setAiOn(!aiOn)}>✦ AI bullets: {aiOn ? 'on' : 'off'}</button>
-                <button className="ghost-btn sm" title="Review each slide; edit text or ✦ regenerate its content" onClick={() => setPhase('review')}>✎ Review &amp; regenerate</button>
+                <button className="ghost-btn sm" title="Step through each slide to edit text or ✦ regenerate one slide" onClick={() => setPhase('review')}>✎ Review</button>
+                <button className="ghost-btn sm" title="Rebuild every slide from the document (regenerates all content)" onClick={regenerateAll}>↻ Regenerate</button>
                 <button className="ghost-btn sm" onClick={() => { setPickOpen(false); setLayoutOpen(!layoutOpen); }}>▦ Layouts</button>
                 <button className="ghost-btn sm" onClick={() => { setLayoutOpen(false); setPickOpen(!pickOpen); }}>🎨 Theme</button>
                 <button className="ghost-btn sm" onClick={doPrint}>⎙ PDF</button>
@@ -830,10 +846,11 @@
           <div className="deck-gen">
             <div className="deck-gen-card">
               <div className="gen-head"><span className="brand-mark"></span><b>Your slides are ready</b></div>
-              <div className="gen-sub">We saved this presentation and the document hasn’t changed, so there’s nothing new to generate. Continue with your saved slides, or review &amp; regenerate them.</div>
-              <div className="rev-nav" style={{ marginTop: 6 }}>
-                <button className="primary-btn" onClick={() => setPhase('deck')}>Continue with saved slides</button>
-                <button className="ghost-btn sm" title="Review each slide; edit text or ✦ regenerate its content" onClick={() => setPhase('review')}>✎ Review &amp; regenerate</button>
+              <div className="gen-sub">We saved this presentation and the document hasn’t changed, so there’s nothing new to generate.</div>
+              <div className="rev-nav" style={{ marginTop: 6, gap: 10, flexWrap: 'wrap' }}>
+                <button className="primary-btn" onClick={() => setPhase('deck')}>Continue</button>
+                <button className="ghost-btn sm" title="Step through each slide to edit text or ✦ regenerate one slide" onClick={() => setPhase('review')}>✎ Review</button>
+                <button className="ghost-btn sm" title="Rebuild every slide from the document (regenerates all content)" onClick={regenerateAll}>↻ Regenerate</button>
               </div>
             </div>
           </div>
