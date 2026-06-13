@@ -35,8 +35,8 @@
       if (!user) {
         const invite = new URLSearchParams(location.search).get('invite');
         location.href = invite
-          ? '/invite.html?token=' + encodeURIComponent(invite)
-          : '/login.html?next=' + encodeURIComponent(location.pathname + location.search);
+          ? '/invite/' + encodeURIComponent(invite)
+          : '/login?next=' + encodeURIComponent(location.pathname + location.search);
         return null;
       }
       return user;
@@ -47,7 +47,7 @@
       const user = await API.requireUser();
       if (!user) return null;
       const id = new URLSearchParams(location.search).get('doc');
-      if (!id) { location.href = '/docs.html'; return null; }
+      if (!id) { location.href = '/docs'; return null; }
       try {
         const doc = await req('GET', '/api/docs/' + id);
         window.MW_USER = user;
@@ -55,13 +55,13 @@
         return { user, doc };
       } catch (e) {
         alert(e.message || 'Could not open this document');
-        location.href = '/docs.html';
+        location.href = '/docs';
         return null;
       }
     },
 
     saveDoc(id, patch) { return req('PUT', '/api/docs/' + id, patch); },
-    logout: async () => { await req('POST', '/api/auth/logout'); location.href = '/login.html'; },
+    logout: async () => { await req('POST', '/api/auth/logout'); location.href = '/login'; },
   };
 
   window.MarkwiseAPI = API;

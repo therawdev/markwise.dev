@@ -36,10 +36,10 @@
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/login.html"><span class="brand-mark"></span><span class="brand-name">Markwise</span></a>
+  <a class="brand" href="/login"><span class="brand-mark"></span><span class="brand-name">Markwise</span></a>
   <div class="topbar-right">
     <span class="pill grey">Shared · read-only</span>
-    <a class="primary-btn as-link" href="/signup.html">Try Markwise</a>
+    <a class="primary-btn as-link" href="/signup">Try Markwise</a>
   </div>
 </header>
 <main class="share-main"><div id="root"><div class="state">Loading document…</div></div></main>
@@ -121,7 +121,7 @@
       root.render(
         <React.Fragment>
           <Viewer doc={doc} />
-          <div className="footer-note">Made with <a href="/signup.html">Markwise</a> — write, visualize, present.</div>
+          <div className="footer-note">Made with <a href="/signup">Markwise</a> — write, visualize, present.</div>
         </React.Fragment>
       );
     } catch (e) {

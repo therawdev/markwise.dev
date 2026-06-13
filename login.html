@@ -1,55 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sign in — Markwise</title>
-<link rel="stylesheet" href="assets/account.css">
-</head>
-<body>
-<div class="auth-stage" data-screen-label="Login">
-  <div class="auth-inner">
-    <div class="auth-brand">
-      <span class="brand-mark"></span>
-      <span class="brand-name">Markwise</span>
-    </div>
-    <div class="auth-card">
-      <h1 class="auth-title">Sign in</h1>
-      <p class="auth-sub">Turn text into visuals, together.</p>
-      <form id="form">
-        <label class="fld-label" for="email">Email</label>
-        <input class="fld" id="email" type="email" autocomplete="email" placeholder="you@company.com" autofocus required>
-        <label class="fld-label" for="password">Password</label>
-        <input class="fld" id="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
-        <div class="form-error" id="error" style="display:none"></div>
-        <button class="primary-btn auth-submit" type="submit">Sign in</button>
-      </form>
-      <div class="auth-alt">No account? <a id="altLink" href="signup.html">Create one</a></div>
-    </div>
-  </div>
-</div>
-<script src="app/api.js"></script>
-<script>
-  const form = document.getElementById('form');
-  const errEl = document.getElementById('error');
-  // keep ?next / ?invite when switching to signup
-  document.getElementById('altLink').href = 'signup.html' + location.search;
-  const showErr = (msg) => { errEl.textContent = msg; errEl.style.display = ''; };
-  form.addEventListener('input', () => { errEl.style.display = 'none'; });
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    errEl.style.display = 'none';
-    try {
-      await MarkwiseAPI.post('/api/auth/login', {
-        email: document.getElementById('email').value.trim(),
-        password: document.getElementById('password').value,
-      });
-      const next = new URLSearchParams(location.search).get('next');
-      location.href = next && next.startsWith('/') ? next : '/docs.html';
-    } catch (err) {
-      showErr(err.message);
-    }
-  });
-</script>
-</body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><title>Markwise</title></head>
+<body><script>
+// Legacy page — the account surface is now a single-page app. Redirect to the clean route.
+(function () {
+  var p = new URLSearchParams(location.search);
+  location.replace('/login' + (p.get('next') ? '?next=' + encodeURIComponent(p.get('next')) : ''));
+})();
+</script></body></html>

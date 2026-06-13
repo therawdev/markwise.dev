@@ -530,7 +530,7 @@
     return (
       <div className="app" data-screen-label="Markwise editor">
         <header className="topbar">
-          <a className="brand" href="/docs.html" title="Back to your documents" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <a className="brand" href="/docs" title="Back to your documents" style={{ textDecoration: 'none', color: 'inherit' }}>
             <span className="brand-mark"></span>
             <span className="brand-name">Markwise</span>
           </a>
@@ -554,7 +554,7 @@
             <button className="secondary-btn" onClick={() => setDocExport(true)}>Export</button>
             <button className="secondary-btn" onClick={() => setDeck(true)}>▶ Present</button>
             <button className="primary-btn" onClick={() => setShare(true)}>Share</button>
-            {boot.user.is_app_owner ? <a className="ghost-btn sm" href="/admin.html" style={{ textDecoration: 'none' }}>Admin</a> : null}
+            {boot.user.is_app_owner ? <a className="ghost-btn sm" href="/admin" style={{ textDecoration: 'none' }}>Admin</a> : null}
             <div
               className="avatar"
               title={boot.user.email + ' — click to sign out'}

@@ -46,15 +46,31 @@ app.get('/api/platform', async (_req, res) => {
 // Static frontend: the Markwise app lives at the repo root.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(__dirname, '../..');
+const spaShell = path.join(webRoot, 'app.html');
+
+// Bare root → the account SPA dashboard; the editor keeps `/?doc=N` (index.html).
+app.get('/', (req, res, next) => {
+  if (req.query.doc !== undefined) return next();
+  res.redirect('/docs');
+});
+
 app.use(express.static(webRoot, {
   index: 'index.html',
-  extensions: ['html'],
+  // NB: no `extensions: ['html']` — clean SPA paths (/docs, /org/1) must reach
+  // the SPA route below, not silently resolve to a stale docs.html file.
   setHeaders(res, filePath) {
     // HTML and the buildless JS/JSX modules must always revalidate, or users
     // keep interacting with yesterday's UI after a deploy.
     if (/\.(html|js|jsx)$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
   },
 }));
+
+// Account SPA: one shell (app.html) backs all client-side routes. The router
+// reads location.pathname, so a hard load of /org/5 must serve the shell too.
+app.get(['/docs', '/admin', '/settings', '/login', '/signup', '/org/:id', '/invite/:token'], (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(spaShell);
+});
 
 const port = Number(process.env.PORT) || 3000;
 app.listen(port, () => console.log(`Markwise running at http://localhost:${port}`));
