@@ -659,11 +659,15 @@
       let cur = null;
       blocks.forEach((b) => {
         const heading = b.kind === 'text' && (b.tag === 'h1' || b.tag === 'h2');
-        if (heading) { cur = { key: b.id, headingId: b.id, title: htmlText(b.html), ids: [b.id], bodyIds: [] }; secs.push(cur); }
+        if (heading) { cur = { key: b.id, headingId: b.id, title: htmlText(b.html), ids: [b.id], bodyIds: [], barFirst: b.id, barLast: b.id, sawVisual: false }; secs.push(cur); }
         else if (b.kind === 'text') {
-          if (!cur) { cur = { key: '__intro', headingId: null, title: '', ids: [], bodyIds: [] }; secs.push(cur); }
+          if (!cur) { cur = { key: '__intro', headingId: null, title: '', ids: [], bodyIds: [], barFirst: null, barLast: null, sawVisual: false }; secs.push(cur); }
           cur.ids.push(b.id); cur.bodyIds.push(b.id);
-        } else if (cur) { cur.ids.push(b.id); } // a visual is part of the range, not the source text
+          // the highlight bar covers only the contiguous text under the heading,
+          // up to the first visual — so a visual below the text isn't highlighted
+          if (cur.barFirst == null) cur.barFirst = b.id;
+          if (!cur.sawVisual) cur.barLast = b.id;
+        } else if (cur) { cur.ids.push(b.id); cur.sawVisual = true; } // a visual is in the range, not the source text
       });
       secs.forEach((s) => {
         const htmls = s.bodyIds.map((id) => (blocks.find((x) => x.id === id) || {}).html || '');
@@ -693,10 +697,10 @@
       if (!el || !sheet) { setSecFab(null); return; }
       const r = el.getBoundingClientRect();
       const sr = sheet.getBoundingClientRect();
-      // vertical extent of the whole section (first block top → last block bottom),
-      // drawn as a single bright bar at the page's left border
-      const firstEl = document.querySelector('.sheet [data-block-id="' + sec.ids[0] + '"]');
-      const lastEl = document.querySelector('.sheet [data-block-id="' + sec.ids[sec.ids.length - 1] + '"]');
+      // the bar covers the section's contiguous TEXT under the heading (barFirst →
+      // barLast), so a visual below the text never gets highlighted
+      const firstEl = document.querySelector('.sheet [data-block-id="' + (sec.barFirst || sec.ids[0]) + '"]');
+      const lastEl = document.querySelector('.sheet [data-block-id="' + (sec.barLast || sec.barFirst || sec.ids[0]) + '"]');
       const fr = (firstEl || el).getBoundingClientRect();
       const lr = (lastEl || el).getBoundingClientRect();
       setSecFab({
