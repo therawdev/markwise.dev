@@ -352,7 +352,7 @@
 
   // ---------- share modal ----------
   // Real share links: a server-issued token makes the doc publicly readable at
-  // /share.html?t=<token>. Creating/revoking requires the doc:share permission.
+  // /share/<token>. Creating/revoking requires the doc:share permission.
   function ShareModal({ docTitle, onClose, toast }) {
     const doc = window.MW_DOC || {};
     const [token, setToken] = useState(doc.share_token || null);
@@ -362,7 +362,7 @@
       window.addEventListener('keydown', k);
       return () => window.removeEventListener('keydown', k);
     }, [onClose]);
-    const url = token ? location.origin + '/share.html?t=' + token : null;
+    const url = token ? location.origin + '/share/' + token : null;
     const create = async () => {
       setBusy(true);
       try {

@@ -72,5 +72,12 @@ app.get(['/docs', '/admin', '/settings', '/login', '/signup', '/org/:id', '/invi
   res.sendFile(spaShell);
 });
 
+// Public read-only doc viewer at a clean URL: /share/<token> → share.html shell
+// (share.jsx reads the token from the path). Legacy /share.html?t= still works.
+app.get('/share/:token', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(webRoot, 'share.html'));
+});
+
 const port = Number(process.env.PORT) || 3000;
 app.listen(port, () => console.log(`Markwise running at http://localhost:${port}`));

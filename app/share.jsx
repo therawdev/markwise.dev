@@ -41,7 +41,9 @@
 
   async function boot() {
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    const token = new URLSearchParams(location.search).get('t');
+    // Clean URL: /share/<token>. Falls back to the legacy /share.html?t=<token>.
+    const fromPath = (location.pathname.match(/^\/share\/(.+)$/) || [])[1];
+    const token = fromPath ? decodeURIComponent(fromPath) : new URLSearchParams(location.search).get('t');
     if (!token) {
       root.render(<div className="state">This share link is incomplete.</div>);
       return;
