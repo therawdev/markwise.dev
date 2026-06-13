@@ -85,9 +85,25 @@
   .doc-scroll { flex: 1; overflow-y: auto; min-width: 0; }
   .sheet {
     max-width: 840px; margin: 36px auto 120px; background: var(--surface);
-    border: 1px solid var(--hairline); border-radius: 14px;
+    border: 1px solid var(--hairline); border-radius: 14px; position: relative;
     padding: 64px 84px 96px; box-shadow: 0 1px 2px rgba(30,28,24,.04), 0 12px 40px -18px rgba(30,28,24,.10);
   }
+  /* ---------- A4 page-break markers ---------- */
+  .page-marks { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+  .page-mark { position: absolute; left: 0; right: 0; border-top: 1.5px dashed #c8c3ba; }
+  .page-mark-label {
+    position: absolute; right: 10px; top: -9px; background: var(--surface);
+    color: #b0aaa0; font-size: 10px; font-weight: 700; letter-spacing: .4px;
+    text-transform: uppercase; padding: 0 7px; line-height: 18px;
+  }
+  /* inline code / code block / comment marks inside text blocks */
+  .tb .mw-code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: .9em; background: #f1efea; border: 1px solid var(--hairline); border-radius: 5px; padding: 1px 5px; }
+  .tb .mw-pre { display: block; font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 13px; background: #f7f6f3; border: 1px solid var(--hairline); border-radius: 8px; padding: 12px 14px; margin: 10px 0; white-space: pre-wrap; }
+  .tb mark.cmt { background: #fdf0c8; border-bottom: 2px solid #e7c14d; border-radius: 2px; cursor: help; }
+  .tb ul, .tb ol { margin: 8px 0; padding-left: 26px; }
+  .tb li { margin: 3px 0; }
+  .tb blockquote { margin: 10px 0; padding: 2px 0 2px 16px; border-left: 3px solid var(--accent); color: var(--grey); font-style: italic; }
+  .tb a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 
   /* ---------- text blocks ---------- */
   .tb { outline: none; caret-color: var(--accent); }
@@ -321,6 +337,28 @@
     padding: 6px 12px 6px 8px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px;
   }
   .fmt-viz:hover { background: rgba(255,255,255,.14); }
+  .fmt-btn svg { display: block; }
+  .fmt-btn sub { font-size: 9px; font-weight: 700; }
+  /* link / comment inline input state */
+  .fmtbar-input { padding: 5px 6px; gap: 6px; }
+  .fmt-input {
+    background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); border-radius: 7px;
+    color: #fff; font: inherit; font-size: 13px; padding: 6px 10px; width: 240px; outline: none;
+  }
+  .fmt-input::placeholder { color: rgba(255,255,255,.5); }
+  .fmt-apply {
+    background: var(--accent); border: none; color: #fff; border-radius: 7px;
+    font-size: 12.5px; font-weight: 700; padding: 6px 12px; white-space: nowrap;
+  }
+  .fmt-apply:hover { filter: brightness(1.12); }
+  /* ---------- left-margin Visualize affordance ---------- */
+  .viz-fab {
+    position: fixed; z-index: 60; width: 36px; height: 36px; border-radius: 50%;
+    background: oklch(0.62 0.17 250); border: none; display: grid; place-items: center;
+    box-shadow: 0 4px 14px -2px rgba(40,80,200,.5); animation: fab-in .14s ease-out;
+    transform: translateY(-4px);
+  }
+  .viz-fab:hover { background: oklch(0.56 0.18 250); transform: translateY(-4px) scale(1.06); }
 
   /* ---------- picker categories ---------- */
   .picker-scroll { overflow-y: auto; padding: 6px 24px 24px; }

@@ -182,5 +182,41 @@
     );
   }
 
-  window.GlyphEditor = { sampleBlocks, TextBlock, VisualBlock, Fab, HintPill };
+  // ---------- A4 page-break markers ----------
+  // Dotted guides showing where the document spills onto a new A4 page, so the
+  // writer can anticipate page breaks before exporting to Word/PDF.
+  function PageMarkers({ deps }) {
+    const ref = useRef(null);
+    const [lines, setLines] = useState([]);
+    useEffect(() => {
+      const host = ref.current;
+      const sheet = host && host.parentElement;
+      if (!sheet) return;
+      const measure = () => {
+        const w = sheet.clientWidth;
+        if (!w) return;
+        const pageH = w * (297 / 210); // A4 aspect: the column width maps to 210mm
+        const total = sheet.scrollHeight;
+        const out = [];
+        for (let y = pageH; y < total - 40; y += pageH) out.push(Math.round(y));
+        setLines(out);
+      };
+      measure();
+      let ro;
+      try { ro = new ResizeObserver(measure); ro.observe(sheet); } catch (e) { /* older browsers */ }
+      window.addEventListener('resize', measure);
+      return () => { if (ro) ro.disconnect(); window.removeEventListener('resize', measure); };
+    }, [deps]);
+    return (
+      <div ref={ref} className="page-marks" contentEditable={false} aria-hidden="true">
+        {lines.map((y, i) => (
+          <div key={i} className="page-mark" style={{ top: y }}>
+            <span className="page-mark-label">Page {i + 2}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  window.GlyphEditor = { sampleBlocks, TextBlock, VisualBlock, Fab, HintPill, PageMarkers };
 })();

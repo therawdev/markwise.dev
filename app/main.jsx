@@ -2,8 +2,8 @@
 (function () {
   const { useState, useEffect, useRef, useCallback } = React;
   const { PickerOverlay, EditPanel, ExportModal, ShareModal } = window.GlyphPanels;
-  const { sampleBlocks, TextBlock, VisualBlock, HintPill } = window.GlyphEditor;
-  const { FormatBar } = window.GlyphFormat;
+  const { sampleBlocks, TextBlock, VisualBlock, HintPill, PageMarkers } = window.GlyphEditor;
+  const { FormatBar, VizFab } = window.GlyphFormat;
   const { DocExportModal } = window.GlyphDocExport;
   const { DeckOverlay } = window.GlyphDeck;
   const { Canvas } = window.GlyphCanvas;
@@ -255,7 +255,8 @@
         const i = bs.findIndex((b) => b.id === id);
         if (i === -1) return bs;
         const b = bs[i];
-        if (b.kind !== 'text' || b.tag === 'h1') return bs;
+        // protect the document title (first block); any other block can change tag
+        if (b.kind !== 'text' || i === 0) return bs;
         const tmp = document.createElement('div');
         tmp.innerHTML = b.html;
         const groups = lineGroups(tmp);
@@ -335,8 +336,11 @@
           })
           .filter(Boolean)
           .join('\n');
+        // anchor the Visualize circle to the first selected block's top
+        const firstEl = document.querySelector('.sheet [data-block-id="' + ids[0] + '"]');
+        const selTop = firstEl ? firstEl.getBoundingClientRect().top : e.clientY - 12;
         setFab({
-          x: e.clientX, y: e.clientY - 12,
+          x: e.clientX, y: e.clientY - 12, selTop,
           text, blockId: ids[ids.length - 1],
           multi: ids.length, canViz: text.length >= 12,
           tag: null, lineIdx: null,
@@ -396,8 +400,13 @@
 
     // ----- selection → format bar -----
     useEffect(() => {
+      // keep the toolbar alive while typing into its own link/comment input
+      const inToolbarInput = () => {
+        const a = document.activeElement;
+        return a && a.classList && a.classList.contains('fmt-input');
+      };
       function check() {
-        if (blockSelRef.current) return; // block-mode owns the fab
+        if (blockSelRef.current || inToolbarInput()) return; // block-mode / toolbar input owns the fab
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed) { setFab(null); return; }
         const text = sel.toString().trim();
@@ -417,11 +426,11 @@
           while (nn && nn.parentNode && nn.parentNode !== blockEl) nn = nn.parentNode;
           groups.forEach((g, gi) => { if (g.nodes.indexOf(nn) !== -1) lineIdx = gi; });
         }
-        setFab({ x: rect.left + rect.width / 2, y: rect.top - 10, text, blockId: blockEl.dataset.blockId, tag: blockEl.tagName.toLowerCase(), lineIdx, canViz: text.length >= 12 });
+        setFab({ x: rect.left + rect.width / 2, y: rect.top - 10, selTop: rect.top, text, blockId: blockEl.dataset.blockId, tag: blockEl.tagName.toLowerCase(), lineIdx, canViz: text.length >= 12 });
       }
       function onUp() { setTimeout(check, 10); }
       function onSelChange() {
-        if (blockSelRef.current) return;
+        if (blockSelRef.current || inToolbarInput()) return;
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed) setFab(null);
       }
@@ -581,6 +590,7 @@
           ) : (
             <main className="doc-scroll" onClick={() => setSelVis(null)}>
               <div className="sheet" onClick={(e) => e.stopPropagation()}>
+                <PageMarkers deps={blocksView.length} />
                 {blocksView.map((b) => (
                   <React.Fragment key={b.id}>
                     {b.kind === 'text' ? (
@@ -619,7 +629,8 @@
           ) : null}
         </div>
 
-        <FormatBar fab={fab} onVisualize={startGenerate} onTag={onTag} />
+        <FormatBar fab={fab} onTag={onTag} />
+        <VizFab fab={fab} onVisualize={startGenerate} />
         {hint && !picker ? <HintPill onDismiss={() => { setHint(false); localStorage.setItem(LS_HINT, '1'); }} /> : null}
         {picker ? (
           <PickerOverlay
