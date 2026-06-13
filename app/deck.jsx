@@ -613,6 +613,13 @@
       setEdited({});
       setRemarks({});
       setRevIdx(0);
+      // reset per-slide arrangement (layout / content mode / flip) back to automatic, but keep
+      // diagram edits, visual size, per-slide theme and skip choices
+      setOv((prev) => {
+        const nx = {};
+        for (const k in prev) { const e = { ...prev[k] }; delete e.layout; delete e.mode; delete e.flip; nx[k] = e; }
+        return nx;
+      });
       skipAutoGenRef.current = false;
       restoredBuiltRef.current = false;
       setGenNonce((n) => n + 1);
@@ -961,13 +968,13 @@
             <button className="deck-add-slide" onClick={() => addSlide(cur)}>＋ Add slide</button>
           </div>
           <div className="deck-stage" ref={stageRef}>
-            {curSlide.kind === 'content' && curSlide.visual ? (
+            {(curSlide.visual || curSlide._layout) ? (
               <div className="deck-mode">
-                <span className="deck-mode-lbl">Content</span>
-                {[['split', '▦ Split'], ['visual', '▣ Visual only'], ['text', '≡ Text only']].map(([m, lbl]) => (
+                <span className="deck-mode-lbl">{curSlide.kind === 'content' && curSlide.visual ? 'Content' : 'Layout'}</span>
+                {curSlide.kind === 'content' && curSlide.visual ? [['split', '▦ Split'], ['visual', '▣ Visual only'], ['text', '≡ Text only']].map(([m, lbl]) => (
                   <button key={m} className={!curSlide._layout && curSlide._mode === m ? 'on' : ''} title={curSlide._layout ? 'Switch to this arrangement (clears the layout)' : ''} onClick={() => setMode(curSlide._oi, m)}>{lbl}</button>
-                ))}
-                {(curSlide._layout || (ov[curSlide._oi] && ov[curSlide._oi].mode)) ? <button className="mode-auto" title="Automatic arrangement (clears layout)" onClick={() => setMode(curSlide._oi, null)}>↺ Auto</button> : null}
+                )) : null}
+                {(curSlide._layout || (ov[curSlide._oi] && ov[curSlide._oi].mode)) ? <button className="mode-auto" title={curSlide._layout ? 'Remove the layout (back to automatic)' : 'Automatic arrangement'} onClick={() => setMode(curSlide._oi, null)}>↺ {curSlide._layout ? 'Remove layout' : 'Auto'}</button> : null}
                 {curSlide._vis ? <button className="mode-auto" title="Reset visual size & position" onClick={() => setOv((prev) => ({ ...prev, [curSlide._oi]: { ...(prev[curSlide._oi] || {}), vis: null } }))}>⤢ Reset size</button> : null}
                 {curSlide._layout ? <span className="deck-mode-lbl" style={{ marginLeft: 'auto' }}>▦ {(window.GlyphDeckLayouts.byId[curSlide._layout] || {}).name || 'Layout'}</span> : null}
               </div>
