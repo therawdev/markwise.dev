@@ -8,6 +8,21 @@ PNG / SVG / PDF / Word / Markdown / PPTX.
 Now a fullstack app: accounts, companies with role-based access control, an
 application-owner admin panel, and a pluggable AI provider layer.
 
+![Switching a visual's layout live in the editor](assets/screenshots/layouts.gif)
+
+> Select text → ✦ Visualize → pick a diagram → switch layouts live. Every type
+> ships multiple layouts (e.g. Tree as *Two sides*, *Indented*, *Top-down grid*).
+
+## Screenshots
+
+| Editor | Canvas board |
+|---|---|
+| ![Editor](assets/screenshots/editor.png) | ![Canvas](assets/screenshots/canvas.png) |
+| **Presentation builder** | **Dashboard** |
+| ![Present](assets/screenshots/present.png) | ![Dashboard](assets/screenshots/dashboard.png) |
+| **Application-owner admin panel** | |
+| ![Admin](assets/screenshots/admin.png) | |
+
 ## Quick start
 
 ```bash
@@ -22,8 +37,10 @@ npm run seed           # prints the app-owner login once
 npm run dev            # → http://localhost:3000
 ```
 
-Sign in at `http://localhost:3000/login.html`. The dashboard lives at `/docs.html`,
-the org settings at `/org.html?id=…`, and the owner panel at `/admin.html`.
+Sign in at `http://localhost:3000/login`. The account surface is a single-page
+React app with clean URLs: the dashboard at `/docs`, org settings at `/org/:id`,
+and the owner panel at `/admin`. The editor lives at `/index.html?doc=:id` and
+shared docs open at `/share/:token`.
 
 ### Run with Docker
 
@@ -54,11 +71,14 @@ admin) and `CODEX_AUTH_JSON` (Codex CLI auth — rotate anytime by re-running
 - **Companies & RBAC** — default Owner/User roles plus custom roles with
   per-permission checkboxes; single-use invite links
 - **Admin panel** — users, companies, AI usage, audit log, AI provider switch
-- **AI providers** — OpenAI Codex SDK (default), Claude Code headless CLI, and
-  Claude SDK/API (currently disabled by policy toggle). No key? The built-in
-  offline parser still generates diagrams deterministically.
+- **AI providers** — Google Gemini via REST (default), OpenAI Codex SDK, Claude
+  Code headless CLI, and Claude SDK/API (gated by a policy toggle). The active
+  provider is switchable in the admin panel, with automatic failover. No key?
+  The built-in offline parser still generates diagrams deterministically.
 
 ## Development
 
-See [CLAUDE.md](CLAUDE.md) for architecture, conventions, and the RBAC model.
-The original Claude Design handoff bundle is preserved in `chats/` and `project/`.
+See [CLAUDE.md](CLAUDE.md) for architecture, conventions, and the RBAC model, and
+[DIAGRAM-TERMINOLOGY.md](DIAGRAM-TERMINOLOGY.md) for the diagram component vocabulary
+and layout-variant naming reference. The original Claude Design handoff bundle is
+preserved in `chats/` and `project/`.
