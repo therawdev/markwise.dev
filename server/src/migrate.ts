@@ -80,6 +80,15 @@ async function migrate() {
     });
   }
 
+  // Saved presentation/deck per document (theme, slide order, per-slide overrides, edited text,
+  // AI-condensed bullets, and a source-content signature) so reopening Present restores instantly
+  // instead of regenerating. null = no deck built yet.
+  if (!(await db.schema.hasColumn('documents', 'deck'))) {
+    await db.schema.alterTable('documents', (t) => {
+      t.jsonb('deck');
+    });
+  }
+
   if (!(await has('audit_logs'))) {
     await db.schema.createTable('audit_logs', (t) => {
       t.increments('id');

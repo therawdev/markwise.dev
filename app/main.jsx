@@ -1141,7 +1141,7 @@
         {exportVisual ? <ExportModal visual={exportVisual} onClose={() => setExportVis(null)} toast={toast} /> : null}
         {share ? <ShareModal docTitle={docTitle} onClose={() => setShare(false)} toast={toast} /> : null}
         {docExport ? <DocExportModal docTitle={docTitle} blocks={blocks} onClose={() => setDocExport(false)} toast={toast} /> : null}
-        {deck ? <DeckOverlay docTitle={docTitle} blocks={blocks} onClose={() => setDeck(false)} toast={toast} /> : null}
+        {deck ? <DeckOverlay docTitle={docTitle} blocks={blocks} docId={docId} onClose={() => setDeck(false)} toast={toast} /> : null}
         {toastMsg ? <div className="toast">{toastMsg}</div> : null}
       </div>
     );

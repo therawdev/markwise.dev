@@ -144,20 +144,30 @@
   };
   const clip = (s, n) => (s && s.length > n ? s.slice(0, n - 1) + '…' : s);
 
-  // ---------- body renderers ----------
-  function Bullets({ paras, fg, acc, size, square }) {
+  // editable text node — uses the deck's click-to-edit EditableText on the editing stage, else a plain span.
+  // (deck-layouts.jsx loads before deck.jsx, so resolve the component lazily at render time.)
+  function ET(props) {
+    const C = window.GlyphDeck && window.GlyphDeck.EditableText;
+    return C ? React.createElement(C, props) : React.createElement('span', { style: props.style }, props.value);
+  }
+
+  // ---------- body renderers (each line is click-to-edit when `editable`; edits the raw bullet) ----------
+  function Bullets({ paras, fg, acc, size, square, editable, onEditPara, off }) {
+    const base = off || 0;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 22, justifyContent: 'center', height: '100%' }}>
         {paras.map((p, i) => (
           <div key={i} style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
             <span style={{ flex: '0 0 10px', width: 10, height: 10, borderRadius: square ? 0 : '50%', background: acc, marginTop: 11 }}></span>
-            <span style={{ fontSize: size, lineHeight: 1.5, color: fg, fontFamily: F }}>{clip(p, 300)}</span>
+            {editable
+              ? <ET value={p} style={{ fontSize: size, lineHeight: 1.5, color: fg, fontFamily: F, flex: 1 }} onCommit={(t) => onEditPara(base + i, t)} />
+              : <span style={{ fontSize: size, lineHeight: 1.5, color: fg, fontFamily: F }}>{clip(p, 300)}</span>}
           </div>
         ))}
       </div>
     );
   }
-  function Numbered({ paras, fg, sub, acc, size }) {
+  function Numbered({ paras, fg, sub, acc, size, editable, onEditPara }) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20, justifyContent: 'center', height: '100%' }}>
         {paras.map((p, i) => {
@@ -165,16 +175,16 @@
           return (
             <div key={i} style={{ display: 'flex', gap: 22, alignItems: 'flex-start' }}>
               <span style={{ flex: '0 0 56px', fontSize: 30, fontWeight: 800, color: acc, fontFamily: F, lineHeight: 1.1 }}>{String(i + 1).padStart(2, '0')}</span>
-              <span style={{ fontSize: size, lineHeight: 1.45, color: fg, fontFamily: F }}>
-                {h ? <b>{h} — </b> : null}{clip(b, 240)}
-              </span>
+              {editable
+                ? <ET value={p} style={{ fontSize: size, lineHeight: 1.45, color: fg, fontFamily: F, flex: 1 }} onCommit={(t) => onEditPara(i, t)} />
+                : <span style={{ fontSize: size, lineHeight: 1.45, color: fg, fontFamily: F }}>{h ? <b>{h} — </b> : null}{clip(b, 240)}</span>}
             </div>
           );
         })}
       </div>
     );
   }
-  function Cards({ paras, fg, sub, cardBg, radius }) {
+  function Cards({ paras, fg, sub, cardBg, radius, editable, onEditPara }) {
     const cols = paras.length <= 3 ? Math.max(paras.length, 1) : paras.length === 4 ? 2 : 3;
     return (
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 22, alignContent: 'center', height: '100%' }}>
@@ -182,15 +192,16 @@
           const [h, b] = splitHead(p);
           return (
             <div key={i} style={{ background: cardBg, borderRadius: radius, padding: '26px 26px' }}>
-              {h ? <div style={{ fontSize: 19, fontWeight: 700, color: fg, fontFamily: F, marginBottom: 10 }}>{h}</div> : null}
-              <div style={{ fontSize: h ? 14.5 : 16.5, lineHeight: 1.5, color: h ? sub : fg, fontFamily: F }}>{clip(b, 200)}</div>
+              {editable
+                ? <ET value={p} style={{ fontSize: 16.5, lineHeight: 1.5, color: fg, fontFamily: F }} onCommit={(t) => onEditPara(i, t)} />
+                : <React.Fragment>{h ? <div style={{ fontSize: 19, fontWeight: 700, color: fg, fontFamily: F, marginBottom: 10 }}>{h}</div> : null}<div style={{ fontSize: h ? 14.5 : 16.5, lineHeight: 1.5, color: h ? sub : fg, fontFamily: F }}>{clip(b, 200)}</div></React.Fragment>}
             </div>
           );
         })}
       </div>
     );
   }
-  function Stats({ paras, fg, sub, acc }) {
+  function Stats({ paras, fg, sub, acc, editable, onEditPara }) {
     const items = paras.slice(0, 4);
     return (
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(items.length, 1)}, 1fr)`, gap: 30, alignContent: 'center', height: '100%' }}>
@@ -200,14 +211,16 @@
           return (
             <div key={i} style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 52, fontWeight: 800, color: acc, fontFamily: F, letterSpacing: '-1px' }}>{st || String(i + 1).padStart(2, '0')}</div>
-              <div style={{ fontSize: 15.5, lineHeight: 1.45, color: sub, fontFamily: F, marginTop: 12 }}>{clip(rest, 130)}</div>
+              {editable
+                ? <ET value={p} style={{ fontSize: 15.5, lineHeight: 1.45, color: sub, fontFamily: F, marginTop: 12, textAlign: 'center' }} onCommit={(t) => onEditPara(i, t)} />
+                : <div style={{ fontSize: 15.5, lineHeight: 1.45, color: sub, fontFamily: F, marginTop: 12 }}>{clip(rest, 130)}</div>}
             </div>
           );
         })}
       </div>
     );
   }
-  function Steps({ paras, fg, sub, acc, cardBg }) {
+  function Steps({ paras, fg, sub, acc, cardBg, editable, onEditPara }) {
     const items = paras.slice(0, 5);
     return (
       <div style={{ position: 'relative', display: 'flex', gap: 26, alignItems: 'flex-start', justifyContent: 'center', height: '100%', paddingTop: '12%' }}>
@@ -217,52 +230,59 @@
           return (
             <div key={i} style={{ flex: 1, textAlign: 'center', position: 'relative' }}>
               <div style={{ width: 46, height: 46, borderRadius: '50%', background: acc, color: '#fff', fontSize: 19, fontWeight: 700, fontFamily: F, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}>{i + 1}</div>
-              {h ? <div style={{ fontSize: 16, fontWeight: 700, color: fg, fontFamily: F, marginTop: 16 }}>{h}</div> : null}
-              <div style={{ fontSize: 13.5, lineHeight: 1.45, color: sub, fontFamily: F, marginTop: h ? 6 : 16 }}>{clip(b, 110)}</div>
+              {editable
+                ? <ET value={p} style={{ fontSize: 13.5, lineHeight: 1.45, color: sub, fontFamily: F, marginTop: 16, textAlign: 'center' }} onCommit={(t) => onEditPara(i, t)} />
+                : <React.Fragment>{h ? <div style={{ fontSize: 16, fontWeight: 700, color: fg, fontFamily: F, marginTop: 16 }}>{h}</div> : null}<div style={{ fontSize: 13.5, lineHeight: 1.45, color: sub, fontFamily: F, marginTop: h ? 6 : 16 }}>{clip(b, 110)}</div></React.Fragment>}
             </div>
           );
         })}
       </div>
     );
   }
-  function Quote({ paras, fg, sub, acc, headFont }) {
+  function Quote({ paras, fg, sub, acc, headFont, editable, onEditPara }) {
     const rest = paras.slice(1);
     return (
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', height: '100%', padding: '0 60px' }}>
         <div style={{ fontSize: 110, fontWeight: 800, color: acc, fontFamily: headFont, lineHeight: 0.4, marginBottom: 30 }}>“</div>
-        <div style={{ fontSize: paras[0] && paras[0].length > 140 ? 28 : 36, lineHeight: 1.4, fontWeight: 600, color: fg, fontFamily: headFont, maxWidth: 940 }}>{clip(paras[0] || '', 280)}</div>
+        {editable
+          ? <ET value={paras[0] || ''} style={{ fontSize: 32, lineHeight: 1.4, fontWeight: 600, color: fg, fontFamily: headFont, maxWidth: 940, textAlign: 'center' }} onCommit={(t) => onEditPara(0, t)} />
+          : <div style={{ fontSize: paras[0] && paras[0].length > 140 ? 28 : 36, lineHeight: 1.4, fontWeight: 600, color: fg, fontFamily: headFont, maxWidth: 940 }}>{clip(paras[0] || '', 280)}</div>}
         {rest.map((p, i) => (
-          <div key={i} style={{ fontSize: 16, color: sub, fontFamily: F, marginTop: i === 0 ? 30 : 10 }}>{clip(p, 140)}</div>
+          editable
+            ? <ET key={i} value={p} style={{ fontSize: 16, color: sub, fontFamily: F, marginTop: i === 0 ? 30 : 10, textAlign: 'center' }} onCommit={(t) => onEditPara(i + 1, t)} />
+            : <div key={i} style={{ fontSize: 16, color: sub, fontFamily: F, marginTop: i === 0 ? 30 : 10 }}>{clip(p, 140)}</div>
         ))}
       </div>
     );
   }
-  function TwoCol({ paras, fg, acc, square }) {
+  function TwoCol({ paras, fg, acc, square, editable, onEditPara }) {
     const half = Math.ceil(paras.length / 2);
     const colsP = [paras.slice(0, half), paras.slice(half)];
     return (
       <div style={{ display: 'flex', gap: 60, height: '100%', alignItems: 'center' }}>
         {colsP.map((col, k) => (
           <div key={k} style={{ flex: 1 }}>
-            <Bullets paras={col} fg={fg} acc={acc} size={18} square={square} />
+            <Bullets paras={col} fg={fg} acc={acc} size={18} square={square} editable={editable} onEditPara={onEditPara} off={k === 0 ? 0 : half} />
           </div>
         ))}
       </div>
     );
   }
-  function Checklist({ paras, fg, acc, size }) {
+  function Checklist({ paras, fg, acc, size, editable, onEditPara }) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 22, justifyContent: 'center', height: '100%' }}>
         {paras.map((p, i) => (
           <div key={i} style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
             <span style={{ flex: '0 0 26px', width: 26, height: 26, borderRadius: 7, background: acc, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 700, marginTop: 2 }}>✓</span>
-            <span style={{ fontSize: size, lineHeight: 1.5, color: fg, fontFamily: F }}>{clip(p, 260)}</span>
+            {editable
+              ? <ET value={p} style={{ fontSize: size, lineHeight: 1.5, color: fg, fontFamily: F, flex: 1 }} onCommit={(t) => onEditPara(i, t)} />
+              : <span style={{ fontSize: size, lineHeight: 1.5, color: fg, fontFamily: F }}>{clip(p, 260)}</span>}
           </div>
         ))}
       </div>
     );
   }
-  function Agenda({ paras, fg, sub, acc, hairline }) {
+  function Agenda({ paras, fg, sub, acc, hairline, editable, onEditPara }) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%' }}>
         {paras.map((p, i) => {
@@ -270,27 +290,29 @@
           return (
             <div key={i} style={{ display: 'flex', gap: 26, alignItems: 'baseline', padding: '17px 0', borderBottom: i < paras.length - 1 ? `1px solid ${hairline}` : 'none' }}>
               <span style={{ flex: '0 0 52px', fontSize: 16, fontWeight: 800, color: acc, fontFamily: F }}>{String(i + 1).padStart(2, '0')}</span>
-              <span style={{ fontSize: 18.5, color: fg, fontFamily: F, lineHeight: 1.4 }}>
-                {h ? <b style={{ marginRight: 12 }}>{h}</b> : null}{h ? <span style={{ color: sub, fontSize: 16 }}>{clip(b, 160)}</span> : clip(b, 220)}
-              </span>
+              {editable
+                ? <ET value={p} style={{ fontSize: 18.5, color: fg, fontFamily: F, lineHeight: 1.4, flex: 1 }} onCommit={(t) => onEditPara(i, t)} />
+                : <span style={{ fontSize: 18.5, color: fg, fontFamily: F, lineHeight: 1.4 }}>{h ? <b style={{ marginRight: 12 }}>{h}</b> : null}{h ? <span style={{ color: sub, fontSize: 16 }}>{clip(b, 160)}</span> : clip(b, 220)}</span>}
             </div>
           );
         })}
       </div>
     );
   }
-  function Feature({ paras, fg, sub, acc, square }) {
+  function Feature({ paras, fg, sub, acc, square, editable, onEditPara }) {
     const rest = paras.slice(1);
     return (
       <div style={{ display: 'flex', gap: 64, height: '100%', alignItems: 'center' }}>
-        <div style={{ flex: '0 0 46%', fontSize: 29, lineHeight: 1.42, fontWeight: 600, color: fg, fontFamily: F, borderLeft: `5px solid ${acc}`, paddingLeft: 28 }}>{clip(paras[0] || '', 230)}</div>
-        {rest.length ? <div style={{ flex: 1 }}><Bullets paras={rest} fg={sub} acc={acc} size={17} square={square} /></div> : null}
+        {editable
+          ? <div style={{ flex: '0 0 46%', borderLeft: `5px solid ${acc}`, paddingLeft: 28 }}><ET value={paras[0] || ''} style={{ fontSize: 29, lineHeight: 1.42, fontWeight: 600, color: fg, fontFamily: F }} onCommit={(t) => onEditPara(0, t)} /></div>
+          : <div style={{ flex: '0 0 46%', fontSize: 29, lineHeight: 1.42, fontWeight: 600, color: fg, fontFamily: F, borderLeft: `5px solid ${acc}`, paddingLeft: 28 }}>{clip(paras[0] || '', 230)}</div>}
+        {rest.length ? <div style={{ flex: 1 }}><Bullets paras={rest} fg={sub} acc={acc} size={17} square={square} editable={editable} onEditPara={onEditPara} off={1} /></div> : null}
       </div>
     );
   }
 
   // ---------- generic layout slide (rendered inside the 1280×720 .slide div) ----------
-  function LayoutSlide({ slide, v, conf, flip, pageNo, total, docTitle }) {
+  function LayoutSlide({ slide, v, conf, flip, pageNo, total, docTitle, editable, onEdit, visEdit, onVisPatch }) {
     const inv = !!conf.invert;
     const acc = inv ? '#ffffff' : v.accent;
     const fg = inv ? '#ffffff' : v.fg;
@@ -301,38 +323,42 @@
     const paras = (slide.paras || []).slice(0, 6);
     const A = conf.accent;
     const tm = conf.title || 'top';
+    const onEditPara = (i, t) => { const np = (slide.paras || []).slice(); if (String(t).trim()) np[i] = t; else np.splice(i, 1); onEdit && onEdit({ paras: np }); };
+    const T = () => (editable ? <ET value={slide.title} style={{ outline: 'none' }} onCommit={(t) => onEdit && onEdit({ title: t })} /> : slide.title);
 
     let visPos = slide.visual ? (conf.visPos || 'right') : 'none';
     if (visPos === 'full' && !slide.visual) visPos = 'none';
 
     const bodyEl = (size) => {
-      const common = { paras, fg: v.look === 'dark' || inv ? fg : '#3a362f', sub, acc, square };
+      const common = { paras, fg: v.look === 'dark' || inv ? fg : '#3a362f', sub, acc, square, editable, onEditPara };
       switch (conf.body) {
         case 'none': return null;
         case 'sublines': return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, justifyContent: 'center', alignItems: 'center', textAlign: 'center', height: '100%' }}>
             {paras.slice(0, 4).map((p, i) => (
-              <div key={i} style={{ fontSize: i === 0 ? 22 : 17.5, lineHeight: 1.5, color: i === 0 ? fg : sub, fontFamily: F, maxWidth: 860 }}>{clip(p, 220)}</div>
+              editable
+                ? <ET key={i} value={p} style={{ fontSize: i === 0 ? 22 : 17.5, lineHeight: 1.5, color: i === 0 ? fg : sub, fontFamily: F, maxWidth: 860, textAlign: 'center' }} onCommit={(t) => onEditPara(i, t)} />
+                : <div key={i} style={{ fontSize: i === 0 ? 22 : 17.5, lineHeight: 1.5, color: i === 0 ? fg : sub, fontFamily: F, maxWidth: 860 }}>{clip(p, 220)}</div>
             ))}
           </div>
         );
         case 'numbered': return <Numbered {...common} size={size + 1} />;
-        case 'cards': return <Cards paras={paras} fg={fg} sub={sub} cardBg={cardBg} radius={Math.max(v.radius, 8)} />;
-        case 'stats': return <Stats paras={paras} fg={fg} sub={sub} acc={inv ? '#fff' : v.accent} />;
-        case 'steps': return <Steps paras={paras} fg={fg} sub={sub} acc={inv ? 'rgba(255,255,255,0.9)' : v.accent} cardBg={cardBg} />;
-        case 'quote': return <Quote paras={paras} fg={fg} sub={sub} acc={acc} headFont={v.headFont} />;
+        case 'cards': return <Cards paras={paras} fg={fg} sub={sub} cardBg={cardBg} radius={Math.max(v.radius, 8)} editable={editable} onEditPara={onEditPara} />;
+        case 'stats': return <Stats paras={paras} fg={fg} sub={sub} acc={inv ? '#fff' : v.accent} editable={editable} onEditPara={onEditPara} />;
+        case 'steps': return <Steps paras={paras} fg={fg} sub={sub} acc={inv ? 'rgba(255,255,255,0.9)' : v.accent} cardBg={cardBg} editable={editable} onEditPara={onEditPara} />;
+        case 'quote': return <Quote paras={paras} fg={fg} sub={sub} acc={acc} headFont={v.headFont} editable={editable} onEditPara={onEditPara} />;
         case 'twocol': return <TwoCol {...common} />;
-        case 'checklist': return <Checklist paras={paras} fg={common.fg} acc={inv ? 'rgba(255,255,255,0.35)' : v.accent} size={size + 2} />;
-        case 'agenda': return <Agenda paras={paras} fg={fg} sub={sub} acc={acc} hairline={hairline} />;
-        case 'feature': return <Feature paras={paras} fg={fg} sub={sub} acc={acc} square={square} />;
+        case 'checklist': return <Checklist paras={paras} fg={common.fg} acc={inv ? 'rgba(255,255,255,0.35)' : v.accent} size={size + 2} editable={editable} onEditPara={onEditPara} />;
+        case 'agenda': return <Agenda paras={paras} fg={fg} sub={sub} acc={acc} hairline={hairline} editable={editable} onEditPara={onEditPara} />;
+        case 'feature': return <Feature paras={paras} fg={fg} sub={sub} acc={acc} square={square} editable={editable} onEditPara={onEditPara} />;
         default: return <Bullets {...common} size={size + 3} />;
       }
     };
 
     const visEl = slide.visual ? (
       <div className="slide-vis" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 0, height: '100%' }}>
-        <div style={{ width: visPos === 'full' ? '72%' : '100%', background: inv || v.card ? '#ffffff' : 'transparent', borderRadius: v.radius, padding: inv || v.card ? '16px 20px' : 0, boxShadow: inv || v.card ? '0 10px 40px -12px rgba(20,18,14,0.3)' : 'none', maxHeight: visPos === 'full' ? 520 : 460, overflow: 'hidden' }}>
-          <window.Diagram visual={slide.visual} />
+        <div style={{ width: visPos === 'full' ? '72%' : '100%', background: inv || v.card ? '#ffffff' : 'transparent', borderRadius: v.radius, padding: inv || v.card ? '16px 20px' : 0, boxShadow: inv || v.card ? '0 10px 40px -12px rgba(20,18,14,0.3)' : 'none', maxHeight: visPos === 'full' ? 520 : 460, overflow: visEdit ? 'visible' : 'hidden' }}>
+          <window.Diagram visual={slide.visual} editable={visEdit} onPatch={visEdit ? onVisPatch : undefined} />
         </div>
       </div>
     ) : null;
@@ -370,7 +396,7 @@
     if (tm === 'hero') {
       inner = (
         <div style={{ position: 'absolute', inset: pad, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
-          <div style={{ ...titleStyle, fontSize: 64, lineHeight: 1.1, maxWidth: 1020 }}>{slide.title}</div>
+          <div style={{ ...titleStyle, fontSize: 64, lineHeight: 1.1, maxWidth: 1020 }}>{T()}</div>
           {bodyArea ? <div style={{ marginTop: 34, width: '100%', maxWidth: 980, flex: '0 1 auto', minHeight: 0, maxHeight: '46%' }}>{bodyArea}</div> : null}
         </div>
       );
@@ -378,7 +404,7 @@
       inner = (
         <div style={{ position: 'absolute', inset: pad, display: 'flex', gap: 56 }}>
           <div style={{ flex: '0 0 320px', display: 'flex', alignItems: 'center' }}>
-            <div style={{ ...titleStyle, fontSize: 46, lineHeight: 1.12 }}>{slide.title}</div>
+            <div style={{ ...titleStyle, fontSize: 46, lineHeight: 1.12 }}>{T()}</div>
           </div>
           {bodyArea}
         </div>
@@ -386,7 +412,7 @@
     } else if (tm === 'center') {
       inner = (
         <div style={{ position: 'absolute', inset: pad, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ ...titleStyle, fontSize: 44, textAlign: 'center', marginTop: conf.body === 'quote' ? 4 : 8 }}>{slide.title}</div>
+          <div style={{ ...titleStyle, fontSize: 44, textAlign: 'center', marginTop: conf.body === 'quote' ? 4 : 8 }}>{T()}</div>
           <div style={{ flex: 1, minHeight: 0, maxWidth: 1060, width: '100%', margin: '0 auto' }}>{bodyArea}</div>
         </div>
       );
@@ -394,7 +420,7 @@
       inner = (
         <div style={{ position: 'absolute', inset: pad, paddingTop: 0, top: 0, display: 'flex', flexDirection: 'column' }}>
           <div style={{ height: 124, display: 'flex', alignItems: 'center', flex: '0 0 124px' }}>
-            <div style={{ ...titleStyle, fontSize: 40, color: '#ffffff' }}>{slide.title}</div>
+            <div style={{ ...titleStyle, fontSize: 40, color: '#ffffff' }}>{T()}</div>
           </div>
           <div style={{ flex: 1, minHeight: 0, paddingTop: 28, paddingBottom: 8 }}>{bodyArea}</div>
         </div>
@@ -403,7 +429,7 @@
       const huge = tm === 'huge';
       inner = (
         <div style={{ position: 'absolute', inset: pad, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ ...titleStyle, fontSize: huge ? 60 : 40, lineHeight: 1.08, maxWidth: huge ? 1000 : undefined, marginTop: A === 'bar' ? 26 : 0, marginBottom: 6 }}>{slide.title}</div>
+          <div style={{ ...titleStyle, fontSize: huge ? 60 : 40, lineHeight: 1.08, maxWidth: huge ? 1000 : undefined, marginTop: A === 'bar' ? 26 : 0, marginBottom: 6 }}>{T()}</div>
           <div style={{ flex: 1, minHeight: 0, marginTop: huge ? 26 : 14 }}>{bodyArea}</div>
         </div>
       );

@@ -129,6 +129,31 @@ docsRouter.get('/:id/view', async (req, res) => {
   });
 });
 
+// ---- saved presentation/deck for this document ----
+docsRouter.get('/:id/deck', async (req, res) => {
+  const doc = await db('documents').where({ id: Number(req.params.id) }).first();
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (!(await canAccessDoc(req.user!, doc, 'doc:view'))) return res.status(403).json({ error: 'No access' });
+  res.json({ deck: typeof doc.deck === 'string' ? JSON.parse(doc.deck) : (doc.deck || null) });
+});
+
+docsRouter.put('/:id/deck', async (req, res) => {
+  const doc = await db('documents').where({ id: Number(req.params.id) }).first();
+  if (!doc) return res.status(404).json({ error: 'Document not found' });
+  if (!(await canAccessDoc(req.user!, doc, 'doc:edit'))) return res.status(403).json({ error: 'No edit access' });
+  const deck = req.body && req.body.deck != null ? req.body.deck : null;
+  if (deck != null && (typeof deck !== 'object' || Array.isArray(deck))) {
+    return res.status(400).json({ error: 'Invalid deck' });
+  }
+  const serialized = deck == null ? null : JSON.stringify(deck);
+  // bound stored client JSON like every sibling field — guards storage exhaustion / DB bloat
+  if (serialized != null && serialized.length > 2_000_000) {
+    return res.status(413).json({ error: 'Deck too large' });
+  }
+  await db('documents').where({ id: doc.id }).update({ deck: serialized });
+  res.json({ ok: true });
+});
+
 // ---- update: accepts {title}, {blocks}, {starred}, or any combination ----
 docsRouter.put('/:id', async (req, res) => {
   const doc = await db('documents').where({ id: Number(req.params.id) }).first();

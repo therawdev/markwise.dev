@@ -63,6 +63,10 @@
     saveDoc(id, patch) { return req('PUT', '/api/docs/' + id, patch); },
     logout: async () => { await req('POST', '/api/auth/logout'); location.href = '/login'; },
 
+    // ---- saved presentation/deck ----
+    getDeck(docId) { return req('GET', '/api/docs/' + docId + '/deck'); },
+    saveDeck(docId, deck) { return req('PUT', '/api/docs/' + docId + '/deck', { deck }); },
+
     // ---- comments ----
     listComments(docId) { return req('GET', '/api/docs/' + docId + '/comments'); },
     addComment(docId, payload) { return req('POST', '/api/docs/' + docId + '/comments', payload); },
