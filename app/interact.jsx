@@ -281,7 +281,9 @@
     const content = (out.el || []).map((el) => {
       if (!React.isValidElement(el)) return el;
       const key = el.key == null ? '' : String(el.key);
-      if (el.type === 'clipPath' || key === '__t' || key === '__backdrop' || key === 'e') return el;
+      // '__t' (the title) is intentionally NOT excluded — it falls through to the
+      // gfx branch below so the title can be dragged like any other element.
+      if (el.type === 'clipPath' || key === '__backdrop' || key === 'e') return el;
       const m = /^it(\d+)$/.exec(key);
       if (m) {
         const i = +m[1];

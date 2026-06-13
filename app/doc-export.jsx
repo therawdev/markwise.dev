@@ -7,6 +7,13 @@
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  // visible text of a block's HTML, trimmed — used to skip empty paragraphs on export
+  function textOf(html) {
+    const d = document.createElement('div');
+    d.innerHTML = html || '';
+    return (d.textContent || '').trim();
+  }
+
   function svgToPng(svg, scale) {
     scale = scale || 2;
     return new Promise((res, rej) => {
@@ -118,6 +125,7 @@
 
     for (const b of blocks) {
       if (b.kind === 'text') {
+        if (!textOf(b.html)) continue; // skip empty paragraphs — no blank lines in the export
         if (b.tag === 'h1') body += para(htmlToRuns(b.html, { bold: true, size: 52, color: '211F1C' }), { after: 160, line: 240 });
         else if (b.tag === 'h2') body += para(htmlToRuns(b.html, { bold: true, size: 29, color: '211F1C' }), { before: 360, after: 120 });
         else body += para(htmlToRuns(b.html, { size: 22, color: '33302B' }), { after: 160, line: 300 });
@@ -184,6 +192,7 @@ ${hasH1 ? '' : `<h1 style="margin:0 0 10pt">${esc(docTitle)}</h1>`}
 </div>`;
     for (const b of blocks) {
       if (b.kind === 'text') {
+        if (!textOf(b.html)) continue; // skip empty paragraphs
         if (b.tag === 'h1') body += `<h1 style="margin:0 0 10pt">${b.html}</h1>`;
         else if (b.tag === 'h2') body += `<h2>${b.html}</h2>`;
         else body += `<p>${b.html}</p>`;
@@ -255,9 +264,8 @@ ${hasH1 ? '' : `<h1 style="margin:0 0 10pt">${esc(docTitle)}</h1>`}
       let md = '';
       for (const b of blocks) {
         if (b.kind === 'text') {
-          const div = document.createElement('div');
-          div.innerHTML = b.html;
-          const txt = div.textContent.trim();
+          const txt = textOf(b.html);
+          if (!txt) continue; // skip empty paragraphs
           md += (b.tag === 'h1' ? '# ' : b.tag === 'h2' ? '## ' : '') + txt + '\n\n';
         } else {
           const s = b.visual.spec;
