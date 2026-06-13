@@ -232,55 +232,55 @@
       const els = [t.el];
 
       if (variant === 'split') {
-        // Two brackets side by side: left items [0..half-1], right items [half..n-1]
-        const half = Math.ceil(n / 2);
-        const sides = [IT.slice(0, half), IT.slice(half)];
-        // Left bracket: root box at far left, bracket opens right into items
-        // Right bracket: root box at center, bracket opens right into items
-        // Layout: [rootL][braceL][itemsL]  |  [rootR][braceR][itemsR]
-        // Left side: x in [24..352], right side: x in [368..W-24]
-        const sideConfigs = [
-          { ox: 24, sideW: 328 },
-          { ox: 368, sideW: 328 },
-        ];
-        sides.forEach((sideItems, si) => {
-          const sn = sideItems.length;
-          if (sn === 0) return;
-          const { ox, sideW } = sideConfigs[si];
-          const rootW = 110, rootH = 60;
-          const bodyH = sn * rowH;
-          const y0 = t.y0 + 8, scy = y0 + bodyH / 2;
-          const sbx = ox + rootW + 8;
-          const globalIdx = si === 0 ? 0 : half;
-          const cRoot = A(globalIdx);
-          els.push(
-            <g key={'root' + si}>
-              {D.box(ox, scy - rootH / 2, rootW, rootH, { fill: cRoot.p, stroke: cRoot.p, rx: 10 })}
-              {D.ctext(ox + rootW / 2, scy, spec.title, { size: 11, weight: 700, fill: '#fff', maxW: rootW - 10, maxLines: 2 })}
-            </g>
-          );
-          const brace = `M${sbx} ${y0 + 6} C${sbx + 18} ${y0 + 6} ${sbx + 18} ${scy - 8} ${sbx + 32} ${scy} C${sbx + 18} ${scy + 8} ${sbx + 18} ${y0 + bodyH - 6} ${sbx} ${y0 + bodyH - 6}`;
-          els.push(<g key={'brace' + si}>{D.path(brace, { fill: 'none', stroke: '#c9c4bb', sw: 2 })}</g>);
-          els.push(<g key={'tie' + si}>{D.line(ox + rootW, scy, sbx + 28, scy, { stroke: '#c9c4bb', sw: 2 })}</g>);
-          const dotX = sbx + 36;
-          const labelX = dotX + 14;
-          const maxLabelW = sideW - (dotX - ox) - 14 - 10;
-          sideItems.forEach((it, j) => {
-            const gi = globalIdx + j;
+        // Mirrored two-sided bracket: ONE centered root, a brace opening RIGHT into the
+        // right-hand items and a mirrored brace opening LEFT into the left-hand items.
+        // Right items take the even indices, left the odd — so order reads top-to-bottom
+        // down the right column, like a balanced two-sided org bracket (not two columns).
+        const cx = 360;
+        const rootW = 132, rootH = 64;
+        const right = [], left = [];
+        IT.forEach((it, i) => (i % 2 === 0 ? right : left).push([it, i]));
+        const rows = Math.max(right.length, left.length, 1);
+        const bodyH = rows * rowH;
+        const y0 = t.y0 + 8, cy = y0 + bodyH / 2;
+        els.push(
+          <g key="root">
+            {D.box(cx - rootW / 2, cy - rootH / 2, rootW, rootH, { fill: A(0).p, stroke: A(0).p, rx: 12 })}
+            {D.ctext(cx, cy, spec.title, { size: 12.5, weight: 700, fill: '#fff', maxW: rootW - 12, maxLines: 2 })}
+          </g>
+        );
+        // dir = +1 right (opens right), -1 left (mirror, opens left)
+        function bracketSide(list, dir) {
+          const m = list.length;
+          if (!m) return;
+          const spineX = cx + dir * (rootW / 2 + 24);   // brace spine, just past the root
+          const vertX = spineX + dir * 40;               // brace vertex — same 40px curl as the normal bracket
+          const tieX = cx + dir * (rootW / 2);           // tie starts at root edge
+          const dotX = vertX + dir * 28;
+          const labelX = dotX + dir * 18;
+          const anchor = dir > 0 ? 'start' : 'end';
+          const farX = dir > 0 ? W - 24 : 24;            // outer edge for value / wrap budget
+          const maxLabelW = Math.abs(farX - labelX) - 40;
+          // brace: identical curve to the default single bracket, mirrored by dir
+          const brace = `M${spineX} ${y0 + 6} C${spineX + dir * 22} ${y0 + 6} ${spineX + dir * 22} ${cy - 10} ${vertX} ${cy} C${spineX + dir * 22} ${cy + 10} ${spineX + dir * 22} ${y0 + bodyH - 6} ${spineX} ${y0 + bodyH - 6}`;
+          els.push(<g key={'brace' + dir}>{D.path(brace, { fill: 'none', stroke: '#c9c4bb', sw: 2 })}</g>);
+          els.push(<g key={'tie' + dir}>{D.line(tieX, cy, vertX - dir * 4, cy, { stroke: '#c9c4bb', sw: 2 })}</g>);
+          list.forEach(([it, gi], k) => {
             const c = A(gi);
-            const y = y0 + j * rowH + rowH / 2;
+            const y = cy + (k - (m - 1) / 2) * rowH;
             els.push(
               <g key={'it' + gi}>
                 {D.circle(dotX, y, 5, { fill: c.p, stroke: c.p })}
-                {D.ctext(labelX, y - (it.detail ? 9 : 0), it.label, { size: 11.5, weight: 600, fill: c.deep, anchor: 'start', maxW: maxLabelW, maxLines: 1 })}
-                {it.detail ? D.ctext(labelX, y + 12, it.detail, { size: 9.5, fill: GREY, anchor: 'start', maxW: maxLabelW, maxLines: 1 }) : null}
-                {it.value ? D.ctext(ox + sideW - 6, y, it.value, { size: 11, weight: 700, fill: c.p, anchor: 'end', maxW: 72, maxLines: 1 }) : null}
+                {D.ctext(labelX, y - (it.detail ? 9 : 0), it.label, { size: 12, weight: 600, fill: c.deep, anchor, maxW: maxLabelW, maxLines: 1 })}
+                {it.detail ? D.ctext(labelX, y + 12, it.detail, { size: 10, fill: GREY, anchor, maxW: maxLabelW, maxLines: 1 }) : null}
+                {it.value ? D.ctext(farX, y, it.value, { size: 11, weight: 700, fill: c.p, anchor: dir > 0 ? 'end' : 'start', maxW: 72, maxLines: 1 }) : null}
               </g>
             );
           });
-        });
-        const tallSide = half;
-        return { h: t.y0 + 8 + tallSide * rowH + 26, el: els };
+        }
+        bracketSide(right, 1);
+        bracketSide(left, -1);
+        return { h: y0 + bodyH + 26, el: els };
       }
 
       // Default single-bracket layout
@@ -313,7 +313,7 @@
   };
   D9.bracket.variants = [
     { id: 'normal', name: 'Single bracket' },
-    { id: 'split', name: 'Two columns' },
+    { id: 'split', name: 'Two-sided brackets' },
   ];
 
   // Two-sided org tree: a flat list of items are peers under one root, branching

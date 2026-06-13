@@ -38,10 +38,15 @@
         function spokeSide(list, dir) {
           const pillX = dir > 0 ? pillXR : pillXL;
           const edgeX = dir > 0 ? pillX : pillX + pillW;
+          const m = list.length;
           list.forEach(([it, gi], k) => {
             const c = A(gi);
             const y = cy + (k - (list.length - 1) / 2) * rowH;
-            const sx = cx + dir * hubR, sy = cy;
+            // Emerge from a distributed point around the hub arc — same fanning the
+            // radial (Hub & spokes) variant uses — so both layouts read alike.
+            const f = m === 1 ? 0 : Math.max(-0.85, Math.min(0.85, ((k - (m - 1) / 2) / ((m - 1) / 2)) * 0.85));
+            const sy = cy + hubR * f;
+            const sx = cx + dir * hubR * Math.cos(Math.asin(f));
             const bendX = dir > 0 ? pillX - 40 : pillX + pillW + 40;
             els.push(
               <g key={'ln' + gi}>
