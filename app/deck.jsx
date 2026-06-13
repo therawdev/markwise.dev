@@ -172,7 +172,7 @@
     const s = w / 1280;
     const isTitle = slide.kind === 'title' || slide.kind === 'thanks';
     const isAgenda = slide.kind === 'agenda';
-    const L = !isTitle && !isAgenda && layout && window.GlyphDeckLayouts ? window.GlyphDeckLayouts.byId[layout] : null;
+    const L = layout && window.GlyphDeckLayouts ? window.GlyphDeckLayouts.byId[layout] : null;
     const inv = !!(L && L.conf.invert);
     const bg = isTitle && v.titleBg ? v.titleBg : inv ? v.accent : v.bg;
     const fg = isTitle && v.titleBg ? '#ffffff' : v.fg;
@@ -192,9 +192,9 @@
         <div className="slide" style={{ width: 1280, height: 720, transform: `scale(${s})`, background: bg, color: fg, fontFamily: v.headFont }}>
           {!L && (v.look === 'minimal' || v.look === 'dark') ? <div style={{ position: 'absolute', left: 90, top: isTitle ? 200 : 56, width: 56, height: 7, background: accent, borderRadius: 4 }}></div> : null}
           {!L && v.look === 'soft' ? <div style={{ position: 'absolute', right: -90, top: -90, width: 280, height: 280, borderRadius: '50%', background: v.accent, opacity: 0.12 }}></div> : null}
-          {!isTitle && L ? (
+          {L ? (
             <window.GlyphDeckLayouts.LayoutSlide slide={slide} v={v} conf={L.conf} flip={flip} pageNo={pageNo} total={total} docTitle={docTitle}
-              editable={editable} onEdit={onEdit} visEdit={visEdit} onVisEdit={onVisEdit} onVisPatch={onVisPatch} VisFrame={VisFrame} />
+              editable={editable} onEdit={onEdit} visEdit={visEdit} onVisEdit={onVisEdit} onVisPatch={onVisPatch} VisFrame={VisFrame} vis={vis} visMoved={visMoved} />
           ) : isTitle ? (
             <div style={{ position: 'absolute', left: 90, right: 110, top: 236 }}>
               {(() => {
@@ -394,7 +394,8 @@
     const [distilled, setDistilled] = useState(() => (snap0 && snap0.distilled) || {});
     // build flow: generating → per-slide review (editable, remarks, regenerate) → deck.
     // a previously-built, unchanged deck skips straight to 'deck'.
-    const [phase, setPhase] = useState(() => (restoredUnchanged ? 'deck' : 'gen'));
+    // a saved, unchanged deck opens to a quick resume prompt (continue vs review & regenerate)
+    const [phase, setPhase] = useState(() => (restoredUnchanged ? 'resume' : 'gen'));
     // when this browser has no local deck, wait for the server lookup before auto-generating, so a
     // deck saved on another device restores instead of being regenerated
     const [serverChecked, setServerChecked] = useState(() => !!snap0 || !docId || !(window.MarkwiseAPI && window.MarkwiseAPI.getDeck));
@@ -485,7 +486,7 @@
       setOv(s.ov || {});
       setEdited(s.edited || {});
       setDistilled(s.distilled || {});
-      if (s.built && s.sig === curSig) { restoredBuiltRef.current = true; builtRef.current = true; skipAutoGenRef.current = true; setPhase('deck'); }
+      if (s.built && s.sig === curSig) { restoredBuiltRef.current = true; builtRef.current = true; skipAutoGenRef.current = true; setPhase((p) => (p === 'gen' ? 'resume' : p)); }
     };
     useEffect(() => {
       if (!docId || !(window.MarkwiseAPI && window.MarkwiseAPI.getDeck)) return;
@@ -595,7 +596,9 @@
     };
     const setSlideTheme = (oi, id) => { dirtyRef.current = true; setOv((prev) => ({ ...prev, [oi]: { ...(prev[oi] || {}), theme: id } })); };
     const toggleOv = (oi, key) => { dirtyRef.current = true; setOv((prev) => ({ ...prev, [oi]: { ...(prev[oi] || {}), [key]: !(prev[oi] || {})[key] } })); };
-    const setMode = (oi, m) => { dirtyRef.current = true; setOv((prev) => ({ ...prev, [oi]: { ...(prev[oi] || {}), mode: m } })); };
+    // choosing a content arrangement (or Auto) also clears any applied layout — the two are
+    // alternative ways to arrange a slide, so the simple modes give a one-click way out of a layout
+    const setMode = (oi, m) => { dirtyRef.current = true; setOv((prev) => ({ ...prev, [oi]: { ...(prev[oi] || {}), mode: m, layout: null } })); };
     // edit a slide's diagram (move/recolor/resize elements, just like in the doc) — persisted
     // as a per-slide visual override so the source document is left untouched
     const patchVisual = (oi, patch) => { dirtyRef.current = true; setOv((prev) => {
@@ -744,7 +747,7 @@
             {phase === 'deck' ? (
               <React.Fragment>
                 <button className={'ghost-btn sm' + (aiOn ? ' ai-on' : '')} title="Rewrite long slide text as short AI bullet points (also used for PPTX & PDF export)" onClick={() => setAiOn(!aiOn)}>✦ AI bullets: {aiOn ? 'on' : 'off'}</button>
-                <button className="ghost-btn sm" onClick={() => setPhase('review')}>✎ Review slides</button>
+                <button className="ghost-btn sm" title="Review each slide; edit text or ✦ regenerate its content" onClick={() => setPhase('review')}>✎ Review &amp; regenerate</button>
                 <button className="ghost-btn sm" onClick={() => { setPickOpen(false); setLayoutOpen(!layoutOpen); }}>▦ Layouts</button>
                 <button className="ghost-btn sm" onClick={() => { setLayoutOpen(false); setPickOpen(!pickOpen); }}>🎨 Theme</button>
                 <button className="ghost-btn sm" onClick={doPrint}>⎙ PDF</button>
@@ -790,7 +793,7 @@
         {layoutOpen ? (
           <div className="layout-pick">
             <div className="lay-head">
-              <b>{curSlide && curSlide.kind === 'content' ? 'Slide layouts · applying to slide ' + (cur + 1) : 'Select a content slide in the rail, then pick a layout'}</b>
+              <b>{curSlide ? 'Slide layouts · applying to slide ' + (cur + 1) : 'Select a slide in the rail, then pick a layout'}</b>
               <label className="lay-all"><input type="checkbox" checked={applyAll} onChange={(e) => setApplyAll(e.target.checked)} /> Apply to all content slides</label>
               <button className="ghost-btn sm" onClick={() => {
                 if (applyAll) setOv((prev) => { const nx = { ...prev }; baseSlides.forEach((sl, oi) => { if (nx[oi]) nx[oi] = { ...nx[oi], layout: null }; }); return nx; });
@@ -812,7 +815,7 @@
                     title={l.name}
                     onClick={() => {
                       if (applyAll) setOv((prev) => { const nx = { ...prev }; baseSlides.forEach((sl, oi) => { if (sl.kind === 'content') nx[oi] = { ...(nx[oi] || {}), layout: l.id }; }); return nx; });
-                      else if (curSlide && curSlide.kind === 'content') setOv((prev) => ({ ...prev, [curSlide._oi]: { ...(prev[curSlide._oi] || {}), layout: l.id } }));
+                      else if (curSlide) setOv((prev) => ({ ...prev, [curSlide._oi]: { ...(prev[curSlide._oi] || {}), layout: l.id } }));
                     }}
                   >
                     <window.GlyphDeckLayouts.Thumb conf={l.conf} />
@@ -823,7 +826,18 @@
             </div>
           </div>
         ) : null}
-        {phase === 'gen' ? (
+        {phase === 'resume' ? (
+          <div className="deck-gen">
+            <div className="deck-gen-card">
+              <div className="gen-head"><span className="brand-mark"></span><b>Your slides are ready</b></div>
+              <div className="gen-sub">We saved this presentation and the document hasn’t changed, so there’s nothing new to generate. Continue with your saved slides, or review &amp; regenerate them.</div>
+              <div className="rev-nav" style={{ marginTop: 6 }}>
+                <button className="primary-btn" onClick={() => setPhase('deck')}>Continue with saved slides</button>
+                <button className="ghost-btn sm" title="Review each slide; edit text or ✦ regenerate its content" onClick={() => setPhase('review')}>✎ Review &amp; regenerate</button>
+              </div>
+            </div>
+          </div>
+        ) : phase === 'gen' ? (
           <div className="deck-gen">
             <div className="deck-gen-card">
               <div className="gen-head"><span className="gen-spinner"></span><b>Generating your presentation…</b></div>
@@ -924,14 +938,15 @@
             <button className="deck-add-slide" onClick={() => addSlide(cur)}>＋ Add slide</button>
           </div>
           <div className="deck-stage" ref={stageRef}>
-            {curSlide.kind === 'content' && curSlide.visual && !curSlide._layout ? (
+            {curSlide.kind === 'content' && curSlide.visual ? (
               <div className="deck-mode">
                 <span className="deck-mode-lbl">Content</span>
                 {[['split', '▦ Split'], ['visual', '▣ Visual only'], ['text', '≡ Text only']].map(([m, lbl]) => (
-                  <button key={m} className={curSlide._mode === m ? 'on' : ''} onClick={() => setMode(curSlide._oi, m)}>{lbl}</button>
+                  <button key={m} className={!curSlide._layout && curSlide._mode === m ? 'on' : ''} title={curSlide._layout ? 'Switch to this arrangement (clears the layout)' : ''} onClick={() => setMode(curSlide._oi, m)}>{lbl}</button>
                 ))}
-                {ov[curSlide._oi] && ov[curSlide._oi].mode ? <button className="mode-auto" title="Back to automatic choice" onClick={() => setMode(curSlide._oi, null)}>↺ Auto</button> : null}
+                {(curSlide._layout || (ov[curSlide._oi] && ov[curSlide._oi].mode)) ? <button className="mode-auto" title="Automatic arrangement (clears layout)" onClick={() => setMode(curSlide._oi, null)}>↺ Auto</button> : null}
                 {curSlide._vis ? <button className="mode-auto" title="Reset visual size & position" onClick={() => setOv((prev) => ({ ...prev, [curSlide._oi]: { ...(prev[curSlide._oi] || {}), vis: null } }))}>⤢ Reset size</button> : null}
+                {curSlide._layout ? <span className="deck-mode-lbl" style={{ marginLeft: 'auto' }}>▦ {(window.GlyphDeckLayouts.byId[curSlide._layout] || {}).name || 'Layout'}</span> : null}
               </div>
             ) : null}
             <div style={{ position: 'relative' }}>
@@ -939,7 +954,7 @@
                 editable onEdit={(patch) => patchEdit(curSlide._oi, patch)}
                 visEdit={!!curSlide.visual && (curSlide._layout ? true : curSlide._mode !== 'text')}
                 onVisEdit={startVisDrag} onVisPatch={(patch) => patchVisual(curSlide._oi, patch)} />
-              <div className="deck-edit-hint">Click any text to edit{curSlide.visual && (curSlide._layout || curSlide._mode !== 'text') ? (curSlide._layout ? ' · click the visual to edit it' : ' · click the visual to edit it, drag its frame to move/resize') : ''}</div>
+              <div className="deck-edit-hint">Click any text to edit{curSlide.visual && (curSlide._layout || curSlide._mode !== 'text') ? ' · click the visual to edit it, drag its frame to move/resize' : ''}</div>
               {curSlide._skip ? <div className="skip-badge">Skipped — excluded from Present &amp; exports</div> : null}
             </div>
             <div className="deck-nav">

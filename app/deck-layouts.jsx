@@ -312,7 +312,7 @@
   }
 
   // ---------- generic layout slide (rendered inside the 1280×720 .slide div) ----------
-  function LayoutSlide({ slide, v, conf, flip, pageNo, total, docTitle, editable, onEdit, visEdit, onVisPatch }) {
+  function LayoutSlide({ slide, v, conf, flip, pageNo, total, docTitle, editable, onEdit, visEdit, onVisPatch, onVisEdit, VisFrame, vis, visMoved }) {
     const inv = !!conf.invert;
     const acc = inv ? '#ffffff' : v.accent;
     const fg = inv ? '#ffffff' : v.fg;
@@ -320,7 +320,9 @@
     const cardBg = inv ? 'rgba(255,255,255,0.15)' : v.look === 'dark' ? 'rgba(255,255,255,0.08)' : v.look === 'soft' ? '#ffffff' : v.soft;
     const hairline = inv ? 'rgba(255,255,255,0.3)' : v.look === 'dark' ? 'rgba(255,255,255,0.18)' : 'rgba(20,18,14,0.14)';
     const square = v.look === 'bold';
-    const paras = (slide.paras || []).slice(0, 6);
+    // title / thank-you slides carry their text in `sub`; fall back to it so layouts have a body.
+    // strip any leading "1. " enumerator (e.g. agenda lines) so numbered layouts don't double-number.
+    const paras = ((slide.paras && slide.paras.length) ? slide.paras : (slide.sub ? [slide.sub] : [])).slice(0, 6).map((p) => String(p).replace(/^\s*\d+[.)]\s+/, ''));
     const A = conf.accent;
     const tm = conf.title || 'top';
     const onEditPara = (i, t) => { const np = (slide.paras || []).slice(); if (String(t).trim()) np[i] = t; else np.splice(i, 1); onEdit && onEdit({ paras: np }); };
@@ -355,10 +357,12 @@
       }
     };
 
+    const vv = vis || { fw: 1, fh: 1, dx: 0, dy: 0 };
     const visEl = slide.visual ? (
       <div className="slide-vis" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 0, height: '100%' }}>
-        <div style={{ width: visPos === 'full' ? '72%' : '100%', background: inv || v.card ? '#ffffff' : 'transparent', borderRadius: v.radius, padding: inv || v.card ? '16px 20px' : 0, boxShadow: inv || v.card ? '0 10px 40px -12px rgba(20,18,14,0.3)' : 'none', maxHeight: visPos === 'full' ? 520 : 460, overflow: visEdit ? 'visible' : 'hidden' }}>
+        <div className="slide-vis-box" style={{ position: 'relative', width: visPos === 'full' ? '72%' : '100%', transform: visMoved ? `translate(${vv.dx}px,${vv.dy}px) scale(${vv.fw},${vv.fh})` : undefined, transformOrigin: 'center', background: inv || v.card ? '#ffffff' : 'transparent', borderRadius: v.radius, padding: inv || v.card ? '16px 20px' : 0, boxShadow: inv || v.card ? '0 10px 40px -12px rgba(20,18,14,0.3)' : 'none', maxHeight: (visEdit || visMoved) ? undefined : (visPos === 'full' ? 520 : 460), overflow: (visEdit || visMoved) ? 'visible' : 'hidden' }}>
           <window.Diagram visual={slide.visual} editable={visEdit} onPatch={visEdit ? onVisPatch : undefined} />
+          {visEdit && VisFrame ? <VisFrame fw={vv.fw} fh={vv.fh} accent={acc} onStart={onVisEdit} /> : null}
         </div>
       </div>
     ) : null;

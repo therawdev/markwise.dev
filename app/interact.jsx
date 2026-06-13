@@ -103,8 +103,12 @@
         : `g[data-note="${d.id}"]`;
       const el = svg.querySelector(q);
       if (!el) { setSels([d]); setPop('text'); return; }
-      const wr = svg.parentElement.getBoundingClientRect();
+      const wrap = svg.parentElement;
+      const wr = wrap.getBoundingClientRect();
       const er = el.getBoundingClientRect();
+      // overlays live in the (un-transformed) .dg-wrap coordinate space; when the diagram is shown
+      // inside a CSS-scaled slide, divide screen offsets by that scale so they land on the element
+      const sc = wrap.offsetWidth ? wr.width / wrap.offsetWidth : 1;
       let fontPx = 13;
       try {
         const tEl = el.tagName === 'text' ? el : el.querySelector('text');
@@ -112,7 +116,7 @@
       } catch (e) { /* keep default */ }
       setSels([d]);
       setPop(null);
-      setInline({ d, field, box: { x: er.x - wr.x, y: er.y - wr.y, w: er.width, h: er.height }, fontPx });
+      setInline({ d, field, box: { x: (er.x - wr.x) / sc, y: (er.y - wr.y) / sc, w: er.width / sc, h: er.height / sc }, fontPx });
     };
     const inlineValue = !inline ? ''
       : inline.d.kind === 'note' ? (((visual.notes || []).find((n) => n.id === inline.d.id) || {}).text || '')
@@ -139,15 +143,18 @@
         : svg.querySelector(`g[data-ar="${d.id}"]`));
       try {
         const sr = svg.getBoundingClientRect();
+        const wrap = svg.parentElement;
+        // scale of the diagram inside a (possibly CSS-scaled) slide — keeps the selection box on-element
+        const sc = wrap && wrap.offsetWidth ? sr.width / wrap.offsetWidth : 1;
         const bs = [];
         sels.forEach((d) => {
           const el = find(d);
           if (!el) return;
           const er = el.getBoundingClientRect();
-          bs.push({ x: er.x - sr.x, y: er.y - sr.y, w: er.width, h: er.height, k: dkey(d) });
+          bs.push({ x: (er.x - sr.x) / sc, y: (er.y - sr.y) / sc, w: er.width / sc, h: er.height / sc, k: dkey(d) });
         });
         if (!bs.length) { setSels([]); setBoxes([]); return; }
-        bs.wrapW = sr.width;
+        bs.wrapW = sr.width / sc;
         setBoxes(bs);
       } catch (e) { setBoxes([]); }
     }, [sels, visual, editable]);
