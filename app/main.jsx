@@ -64,12 +64,19 @@
     const [commentDraft, setCommentDraft] = useState(null); // { cid, anchor:{blockIds,quote} }
     const [showComments, setShowComments] = useState(false);
     const [moreOpen, setMoreOpen] = useState(false);
+    const [avatarOpen, setAvatarOpen] = useState(false);
     useEffect(() => {
       if (!moreOpen) return;
       const close = (e) => { if (!e.target.closest || !e.target.closest('.more-wrap')) setMoreOpen(false); };
       document.addEventListener('mousedown', close);
       return () => document.removeEventListener('mousedown', close);
     }, [moreOpen]);
+    useEffect(() => {
+      if (!avatarOpen) return;
+      const close = (e) => { if (!e.target.closest || !e.target.closest('.avatar-wrap')) setAvatarOpen(false); };
+      document.addEventListener('mousedown', close);
+      return () => document.removeEventListener('mousedown', close);
+    }, [avatarOpen]);
     const [activeCid, setActiveCid] = useState(null);
     const [members, setMembers] = useState([]);         // org members, for @mentions
     const [presence, setPresence] = useState([]);       // other active editors
@@ -941,13 +948,19 @@
           </div>
           <div className="topbar-right">
             {presence.length ? (
-              <div className="presence-stack" title={presence.map((u) => u.name || u.email).join(', ') + ' also here'}>
+              <div className="presence-stack">
                 {presence.slice(0, 4).map((u) => (
-                  <span key={u.id} className="presence-ava" title={(u.name || u.email) + (u.editing_block ? ' — editing' : '')}>
+                  <span
+                    key={u.id}
+                    className={'presence-ava' + (u.editing_block ? ' editing' : '')}
+                    data-name={(u.name || u.email) + (u.editing_block ? ' · editing' : ' · viewing')}
+                  >
                     {(u.name || u.email || '?').charAt(0).toUpperCase()}
                   </span>
                 ))}
-                {presence.length > 4 ? <span className="presence-ava more">+{presence.length - 4}</span> : null}
+                {presence.length > 4 ? (
+                  <span className="presence-ava more" data-name={presence.slice(4).map((u) => u.name || u.email).join(', ')}>+{presence.length - 4}</span>
+                ) : null}
               </div>
             ) : null}
             <span className="save-state" style={{ color: saveState === 'error' ? '#b3422f' : 'var(--grey)' }}>
@@ -969,19 +982,34 @@
               <button className="icon-btn topbar-icon" onClick={() => setMoreOpen((o) => !o)} title="More" aria-label="More actions">⋯</button>
               {moreOpen ? (
                 <div className="more-menu">
-                  {boot.user.is_app_owner ? <a className="more-item" href="/admin">Admin panel</a> : null}
                   <button className="more-item" onClick={() => { setMoreOpen(false); loadGallery(); }}>Visual gallery</button>
                   <button className="more-item" onClick={() => { setMoreOpen(false); resetDoc(); }}>Reset document</button>
-                  <div className="more-div"></div>
-                  <button className="more-item danger" onClick={() => { setMoreOpen(false); if (window.confirm('Sign out of Markwise?')) window.MarkwiseAPI.logout(); }}>Sign out</button>
                 </div>
               ) : null}
             </div>
-            <div
-              className="avatar"
-              title={boot.user.email}
-            >
-              {(boot.user.name || 'U').charAt(0).toUpperCase()}
+            <div className="avatar-wrap">
+              <button
+                className="avatar"
+                onClick={() => setAvatarOpen((o) => !o)}
+                title={boot.user.name || boot.user.email}
+                aria-label="Account menu"
+              >
+                {(boot.user.name || 'U').charAt(0).toUpperCase()}
+              </button>
+              {avatarOpen ? (
+                <div className="more-menu avatar-menu">
+                  <div className="avatar-head">
+                    <div className="avatar-name">{boot.user.name || 'You'}</div>
+                    <div className="avatar-email">{boot.user.email}</div>
+                  </div>
+                  <div className="more-div"></div>
+                  <a className="more-item" href="/docs">My documents</a>
+                  <a className="more-item" href="/settings">Account settings</a>
+                  {boot.user.is_app_owner ? <a className="more-item" href="/admin">Admin panel</a> : null}
+                  <div className="more-div"></div>
+                  <button className="more-item danger" onClick={() => { setAvatarOpen(false); if (window.confirm('Sign out of Markwise?')) window.MarkwiseAPI.logout(); }}>Sign out</button>
+                </div>
+              ) : null}
             </div>
           </div>
         </header>

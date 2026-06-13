@@ -68,7 +68,14 @@
   .avatar {
     width: 30px; height: 30px; border-radius: 50%; background: var(--accent-deep); color: #fff;
     display: grid; place-items: center; font-size: 12.5px; font-weight: 700;
+    border: none; cursor: pointer; padding: 0; transition: box-shadow .12s;
   }
+  .avatar:hover { box-shadow: 0 0 0 3px var(--accent-soft); }
+  .avatar-wrap { position: relative; }
+  .avatar-menu { right: 0; min-width: 190px; }
+  .avatar-head { padding: 8px 10px 4px; }
+  .avatar-name { font-size: 13px; font-weight: 700; color: var(--ink); }
+  .avatar-email { font-size: 11.5px; color: var(--grey); overflow: hidden; text-overflow: ellipsis; }
 
   /* ---------- buttons ---------- */
   .primary-btn {
@@ -137,12 +144,24 @@
   /* presence avatars in the topbar */
   .presence-stack { display: flex; align-items: center; margin-right: 4px; }
   .presence-ava {
-    width: 24px; height: 24px; border-radius: 50%; background: #5273dc; color: #fff;
+    position: relative; width: 24px; height: 24px; border-radius: 50%; background: #5273dc; color: #fff;
     font-size: 11px; font-weight: 700; display: grid; place-items: center; border: 2px solid var(--surface, #fff);
-    margin-left: -6px; box-shadow: 0 1px 2px rgba(0,0,0,.12);
+    margin-left: -6px; box-shadow: 0 1px 2px rgba(0,0,0,.12); cursor: default;
   }
   .presence-ava:first-child { margin-left: 0; }
   .presence-ava.more { background: #8a8578; }
+  .presence-ava.editing { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2e9e5b; } /* green ring = actively editing */
+  .presence-ava:hover { z-index: 60; }
+  .presence-ava::after {
+    content: attr(data-name); position: absolute; top: calc(100% + 7px); left: 50%; transform: translateX(-50%);
+    background: #2b2925; color: #fff; font-size: 11px; font-weight: 600; padding: 4px 8px; border-radius: 6px;
+    white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .12s; z-index: 60;
+  }
+  .presence-ava::before {
+    content: ''; position: absolute; top: calc(100% + 2px); left: 50%; transform: translateX(-50%);
+    border: 5px solid transparent; border-bottom-color: #2b2925; opacity: 0; transition: opacity .12s; pointer-events: none;
+  }
+  .presence-ava:hover::after, .presence-ava:hover::before { opacity: 1; }
 
   /* mini comment bar for whole-section selections */
   .fmtbar.fmtbar-mini { padding: 4px; }
