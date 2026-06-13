@@ -11,8 +11,65 @@
     name: 'Spokes',
     render(spec, D, pal) {
       const A = (i) => palAt(pal, i);
+      const variant = spec.variant;
       const t = D.title(spec.title);
       const IT = spec.items, n = IT.length;
+
+      if (variant === 'split') {
+        const right = IT.map((it, i) => [it, i]).filter(([, i]) => i % 2 === 0);
+        const left  = IT.map((it, i) => [it, i]).filter(([, i]) => i % 2 === 1);
+        const rows = Math.max(right.length, left.length);
+        const rowH = Math.min(82, Math.max(58, 470 / Math.max(1, rows)));
+        const pillH = Math.min(64, rowH - 8);
+        const icoR = pillH / 2 - 2;
+        const h = Math.max(rows * rowH + 70, 250);
+        const cy = h / 2, cx = 360;
+        const hubR = 52;
+        // pill dimensions per side
+        const pillW = 196, pillXR = cx + 88, pillXL = cx - 88 - pillW;
+        const els = [t.el];
+        els.push(
+          <g key="hub">
+            {D.circle(cx, cy, hubR, { fill: '#fff', stroke: A(0).p, sw: 6 })}
+            {I.draw(cx, cy - (hubR > 44 ? 12 : 0), Math.min(28, hubR * 0.6), spec.title, A(0).deep, 2)}
+            {hubR > 44 ? D.ctext(cx, cy + 18, spec.title, { size: 11, weight: 700, fill: A(0).deep, maxW: hubR * 1.6, maxLines: 2 }) : null}
+          </g>
+        );
+        function spokeSide(list, dir) {
+          const pillX = dir > 0 ? pillXR : pillXL;
+          const edgeX = dir > 0 ? pillX : pillX + pillW;
+          list.forEach(([it, gi], k) => {
+            const c = A(gi);
+            const y = cy + (k - (list.length - 1) / 2) * rowH;
+            const sx = cx + dir * hubR, sy = cy;
+            const bendX = dir > 0 ? pillX - 40 : pillX + pillW + 40;
+            els.push(
+              <g key={'ln' + gi}>
+                {D.path(`M${sx.toFixed(1)} ${sy.toFixed(1)} L${bendX} ${y} L${edgeX} ${y}`, { fill: 'none', stroke: c.mid, sw: 1.6 })}
+                {D.circle(sx, sy, 3.4, { fill: c.p, stroke: '#fff', sw: 1.2 })}
+                {D.circle(bendX, y, 3.4, { fill: c.p, stroke: '#fff', sw: 1.2 })}
+              </g>
+            );
+            const iconX = dir > 0 ? pillX + 4 : pillX + pillW - 4;
+            const textX = dir > 0 ? pillX + icoR + 26 : pillX + pillW - icoR - 26;
+            const anchor = dir > 0 ? 'start' : 'end';
+            const textMaxW = pillW - icoR - 50;
+            els.push(
+              <g key={'it' + gi}>
+                {D.box(pillX, y - pillH / 2, pillW, pillH, { fill: c.soft, stroke: c.p, rx: pillH / 2 })}
+                {D.circle(iconX, y, icoR + 5, { fill: '#fff', stroke: c.p, sw: 3.5 })}
+                {I.draw(iconX, y, icoR + 1, (it.label || '') + ' ' + (it.detail || ''), c.deep, 2)}
+                {D.ctext(textX, y - (it.detail ? 10 : 0), it.label + (it.value ? '  ·  ' + it.value : ''), { size: 12.5, weight: 700, fill: c.deep, anchor, maxW: textMaxW, maxLines: 1 })}
+                {it.detail ? D.ctext(textX, y + 13, it.detail, { size: 10, fill: c.deep === '#1d1b18' ? GREY : c.deep, anchor, maxW: textMaxW, maxLines: 1 }) : null}
+              </g>
+            );
+          });
+        }
+        spokeSide(right, 1);
+        spokeSide(left, -1);
+        return { h, el: els };
+      }
+
       const rowH = Math.min(82, Math.max(58, 470 / n));
       const pillH = Math.min(64, rowH - 8);
       const y0 = t.y0 + 6;
@@ -53,6 +110,10 @@
       return { h: y0 + bodyH + 18, el: els };
     },
   };
+  D9.spokes.variants = [
+    { id: 'radial', name: 'Hub & spokes' },
+    { id: 'split', name: 'Two sides' },
+  ];
 
   // ---- nested: concentric circles sharing a base, leader lines to a left list ----
   D9.nested = {

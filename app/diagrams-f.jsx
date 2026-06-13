@@ -9,8 +9,54 @@
     name: 'Diverge',
     render(spec, D, pal, dirIn) {
       const A = (i) => palAt(pal, i);
+      const variant = spec.variant;
       const t = D.title(spec.title);
       const IT = spec.items, n = IT.length;
+
+      if (variant === 'split') {
+        const right = IT.map((it, i) => [it, i]).filter(([, i]) => i % 2 === 0);
+        const left  = IT.map((it, i) => [it, i]).filter(([, i]) => i % 2 === 1);
+        const rows = Math.max(right.length, left.length);
+        const rowH = Math.min(72, 380 / Math.max(1, rows) + 24);
+        const nh = Math.min(52, rowH - 12);
+        const h = Math.max(rows * rowH + 70, 250);
+        const cy = h / 2, cx = 360;
+        const nw = 248;
+        const colXR = cx + 76, colXL = cx - 76 - nw;
+        const els = [t.el];
+        els.push(
+          <g key="hub">
+            {D.circle(cx, cy, 64, { fill: A(0).p, stroke: A(0).p })}
+            {D.ctext(cx, cy, spec.title, { size: 13, weight: 700, fill: '#fff', maxW: 104, maxLines: 3 })}
+          </g>
+        );
+        function divergeSide(list, dir) {
+          const colX = dir > 0 ? colXR : colXL;
+          const isConverge = dirIn;
+          list.forEach(([it, gi], k) => {
+            const c = A(gi);
+            const y = cy + (k - (list.length - 1) / 2) * rowH;
+            const boxEdgeX = dir > 0 ? colX : colX + nw;
+            const hubEdgeX = cx + dir * 66;
+            if (isConverge) {
+              els.push(<g key={'a' + gi}>{D.arrow(boxEdgeX + dir * 8, y, hubEdgeX, cy + (y - cy) * 0.18, { stroke: c.p, sw: 1.8 })}</g>);
+            } else {
+              els.push(<g key={'a' + gi}>{D.arrow(hubEdgeX, cy + (y - cy) * 0.18, boxEdgeX - dir * 10, y, { stroke: c.p, sw: 1.8 })}</g>);
+            }
+            els.push(
+              <g key={'it' + gi}>
+                {D.box(colX, y - nh / 2, nw, nh, { fill: c.soft, stroke: c.p, rx: 11 })}
+                {D.ctext(colX + nw / 2, y - (it.detail && nh > 40 ? 8 : 0), it.label, { size: 12.5, weight: 600, fill: c.deep, maxW: nw - 18, maxLines: 1 })}
+                {it.detail && nh > 40 ? D.ctext(colX + nw / 2, y + 12, it.detail, { size: 10, fill: GREY, maxW: nw - 18, maxLines: 1 }) : null}
+              </g>
+            );
+          });
+        }
+        divergeSide(right, 1);
+        divergeSide(left, -1);
+        return { h, el: els };
+      }
+
       const rowH = Math.min(72, 380 / n + 24);
       const bodyH = n * rowH;
       const cy = t.y0 + bodyH / 2;
@@ -40,6 +86,10 @@
       return { h: t.y0 + bodyH + 20, el: els };
     },
   };
+  D9.diverge.variants = [
+    { id: 'radial', name: 'Hub & branches' },
+    { id: 'split', name: 'Two sides' },
+  ];
 
   D9.converge = {
     name: 'Converge',
@@ -47,6 +97,10 @@
       return D9.diverge.render(spec, D, pal, true);
     },
   };
+  D9.converge.variants = [
+    { id: 'radial', name: 'Hub & branches' },
+    { id: 'split', name: 'Two sides' },
+  ];
 
   D9.waterfall = {
     name: 'Waterfall',
@@ -291,8 +345,47 @@
       const A = (i) => palAt(pal, i);
       const t = D.title(spec.title);
       const IT = spec.items, n = IT.length;
+      const variant = spec.variant;
       const rowH = 62, bh = 48, notch = 18;
       const els = [t.el];
+
+      if (variant === 'split') {
+        // Two ribbon columns: left [0..half-1], right [half..n-1]
+        const half = Math.ceil(n / 2);
+        const sides = [IT.slice(0, half), IT.slice(half)];
+        // Left column: circle at x=52 (ox=24), ribbon starts at x=96
+        // Right column: circle at x=396 (ox=368), ribbon starts at x=440
+        const sideOrigins = [24, 368];
+        const sideW = 328;
+        const circleOff = 28; // circle center relative to column origin
+        const ribbonX = circleOff + 40; // ribbon start relative to origin
+        const ribbonW = sideW - ribbonX - 8; // ribbon width (fixed per side, no step-in)
+        sides.forEach((sideItems, si) => {
+          const ox = sideOrigins[si];
+          sideItems.forEach((it, j) => {
+            const gi = si === 0 ? j : half + j;
+            const c = A(gi);
+            const y = t.y0 + j * rowH;
+            const rx = ox + ribbonX;
+            const rw = ribbonW;
+            const filled = pal.multi || gi === 0;
+            els.push(
+              <g key={'it' + gi}>
+                {D.poly([[rx, y], [rx + rw, y], [rx + rw - notch, y + bh / 2], [rx + rw, y + bh], [rx, y + bh]], { fill: filled ? c.p : c.soft, stroke: c.p })}
+                {D.circle(ox + circleOff, y + bh / 2, 15, { fill: '#fff', stroke: c.p, sw: 2 })}
+                {D.ctext(ox + circleOff, y + bh / 2, String(gi + 1), { size: 11.5, weight: 700, fill: c.p })}
+                {D.line(ox + circleOff + 15, y + bh / 2, rx, y + bh / 2, { stroke: c.mid, sw: 1.4 })}
+                {D.ctext(rx + 14, y + bh / 2 - (it.detail ? 9 : 0), it.label, { size: 11, weight: 700, fill: filled ? '#fff' : c.deep, anchor: 'start', maxW: rw - notch - 22, maxLines: 1 })}
+                {it.detail ? D.ctext(rx + 14, y + bh / 2 + 13, it.detail, { size: 9.5, fill: filled ? 'rgba(255,255,255,0.78)' : GREY, anchor: 'start', maxW: rw - notch - 22, maxLines: 1 }) : null}
+              </g>
+            );
+          });
+        });
+        const tallSide = half;
+        return { h: t.y0 + tallSide * rowH + 8, el: els };
+      }
+
+      // Default single-column layout
       IT.forEach((it, i) => {
         const c = A(i);
         const y = t.y0 + i * rowH;
@@ -311,6 +404,10 @@
       return { h: t.y0 + n * rowH + 8, el: els };
     },
   };
+  D9.ribbon.variants = [
+    { id: 'normal', name: 'Single column' },
+    { id: 'split', name: 'Two columns' },
+  ];
 
   // ---------- catalog: categories + flat order ----------
   const CATEGORIES = [

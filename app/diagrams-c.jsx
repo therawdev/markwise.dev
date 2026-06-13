@@ -227,11 +227,66 @@
       const A = (i) => palAt(pal, i);
       const t = D.title(spec.title);
       const IT = spec.items, n = IT.length;
+      const variant = spec.variant;
       const rowH = 52;
+      const els = [t.el];
+
+      if (variant === 'split') {
+        // Two brackets side by side: left items [0..half-1], right items [half..n-1]
+        const half = Math.ceil(n / 2);
+        const sides = [IT.slice(0, half), IT.slice(half)];
+        // Left bracket: root box at far left, bracket opens right into items
+        // Right bracket: root box at center, bracket opens right into items
+        // Layout: [rootL][braceL][itemsL]  |  [rootR][braceR][itemsR]
+        // Left side: x in [24..352], right side: x in [368..W-24]
+        const sideConfigs = [
+          { ox: 24, sideW: 328 },
+          { ox: 368, sideW: 328 },
+        ];
+        sides.forEach((sideItems, si) => {
+          const sn = sideItems.length;
+          if (sn === 0) return;
+          const { ox, sideW } = sideConfigs[si];
+          const rootW = 110, rootH = 60;
+          const bodyH = sn * rowH;
+          const y0 = t.y0 + 8, scy = y0 + bodyH / 2;
+          const sbx = ox + rootW + 8;
+          const globalIdx = si === 0 ? 0 : half;
+          const cRoot = A(globalIdx);
+          els.push(
+            <g key={'root' + si}>
+              {D.box(ox, scy - rootH / 2, rootW, rootH, { fill: cRoot.p, stroke: cRoot.p, rx: 10 })}
+              {D.ctext(ox + rootW / 2, scy, spec.title, { size: 11, weight: 700, fill: '#fff', maxW: rootW - 10, maxLines: 2 })}
+            </g>
+          );
+          const brace = `M${sbx} ${y0 + 6} C${sbx + 18} ${y0 + 6} ${sbx + 18} ${scy - 8} ${sbx + 32} ${scy} C${sbx + 18} ${scy + 8} ${sbx + 18} ${y0 + bodyH - 6} ${sbx} ${y0 + bodyH - 6}`;
+          els.push(<g key={'brace' + si}>{D.path(brace, { fill: 'none', stroke: '#c9c4bb', sw: 2 })}</g>);
+          els.push(<g key={'tie' + si}>{D.line(ox + rootW, scy, sbx + 28, scy, { stroke: '#c9c4bb', sw: 2 })}</g>);
+          const dotX = sbx + 36;
+          const labelX = dotX + 14;
+          const maxLabelW = sideW - (dotX - ox) - 14 - 10;
+          sideItems.forEach((it, j) => {
+            const gi = globalIdx + j;
+            const c = A(gi);
+            const y = y0 + j * rowH + rowH / 2;
+            els.push(
+              <g key={'it' + gi}>
+                {D.circle(dotX, y, 5, { fill: c.p, stroke: c.p })}
+                {D.ctext(labelX, y - (it.detail ? 9 : 0), it.label, { size: 11.5, weight: 600, fill: c.deep, anchor: 'start', maxW: maxLabelW, maxLines: 1 })}
+                {it.detail ? D.ctext(labelX, y + 12, it.detail, { size: 9.5, fill: GREY, anchor: 'start', maxW: maxLabelW, maxLines: 1 }) : null}
+                {it.value ? D.ctext(ox + sideW - 6, y, it.value, { size: 11, weight: 700, fill: c.p, anchor: 'end', maxW: 72, maxLines: 1 }) : null}
+              </g>
+            );
+          });
+        });
+        const tallSide = half;
+        return { h: t.y0 + 8 + tallSide * rowH + 26, el: els };
+      }
+
+      // Default single-bracket layout
       const bodyH = n * rowH;
       const y0 = t.y0 + 8, cy = y0 + bodyH / 2;
       const bx = 268;
-      const els = [t.el];
       els.push(
         <g key="root">
           {D.box(24, cy - 34, 200, 68, { fill: A(0).p, stroke: A(0).p, rx: 12 })}
@@ -256,47 +311,57 @@
       return { h: y0 + bodyH + 26, el: els };
     },
   };
+  D9.bracket.variants = [
+    { id: 'normal', name: 'Single bracket' },
+    { id: 'split', name: 'Two columns' },
+  ];
 
+  // Two-sided org tree: a flat list of items are peers under one root, branching
+  // left and right with right-angle (elbow) connectors — every node is connected,
+  // and no false parent/child hierarchy is implied between the items.
   D9.tree = {
     name: 'Tree',
     render(spec, D, pal) {
       const A = (i) => palAt(pal, i);
-      const t = D.title(spec.title);
-      const IT = spec.items, n = IT.length;
-      const { cols, rows } = grid(n, 4);
-      const gap = 14, nh = 62, rowGap = 46;
-      const nw = (W - 48 - (cols - 1) * gap) / cols;
-      const rootW = 220, rootH = 54;
-      const rootX = 360 - rootW / 2, rootY = t.y0;
-      const busY = rootY + rootH + 24;
-      const els = [t.el];
+      const IT = spec.items;
+      const left = IT.map((it, i) => [it, i]).filter(([, i]) => i % 2 === 0);
+      const right = IT.map((it, i) => [it, i]).filter(([, i]) => i % 2 === 1);
+      const rows = Math.max(left.length, right.length, 1);
+      const nh = 54, rowGap = 14, rowH = nh + rowGap;
+      const nw = 180, rootW = 170, rootH = 60, railGap = 30, topPad = 30;
+      const h = Math.max(rows * rowH - rowGap, 110) + topPad * 2;
+      const cy = h / 2, cx = 360;
+      const els = [];
+      function side(list, dir) {
+        if (!list.length) return;
+        const rootEdge = cx + dir * (rootW / 2);
+        const railX = rootEdge + dir * railGap;
+        const ys = list.map((_, k) => cy + (k - (list.length - 1) / 2) * rowH);
+        els.push(<g key={'trunk' + dir}>{D.line(rootEdge, cy, railX, cy, { stroke: '#c9c4bb', sw: 1.8 })}</g>);
+        if (list.length > 1) els.push(<g key={'rail' + dir}>{D.line(railX, ys[0], railX, ys[ys.length - 1], { stroke: '#c9c4bb', sw: 1.8 })}</g>);
+        list.forEach(([it, gi], k) => {
+          const c = A(gi), y = ys[k];
+          const bx = dir > 0 ? railX + railGap : railX - railGap - nw;
+          const childEdge = dir > 0 ? bx : bx + nw;
+          els.push(<g key={'br' + gi}>{D.line(railX, y, childEdge, y, { stroke: '#c9c4bb', sw: 1.8 })}</g>);
+          els.push(
+            <g key={'it' + gi}>
+              {D.box(bx, y - nh / 2, nw, nh, { fill: c.soft, stroke: c.p, rx: 10 })}
+              {D.ctext(bx + nw / 2, y - (it.detail ? 9 : 0), it.label, { size: 12, weight: 600, fill: c.deep, maxW: nw - 14, maxLines: it.detail ? 1 : 2 })}
+              {it.detail ? D.ctext(bx + nw / 2, y + 12, it.detail, { size: 9.5, fill: GREY, maxW: nw - 14, maxLines: 1 }) : null}
+            </g>
+          );
+        });
+      }
+      side(left, -1);
+      side(right, 1);
       els.push(
         <g key="root">
-          {D.box(rootX, rootY, rootW, rootH, { fill: A(0).p, stroke: A(0).p, rx: 12 })}
-          {D.ctext(360, rootY + rootH / 2, spec.title, { size: 14, weight: 700, fill: '#fff', maxW: rootW - 20, maxLines: 2 })}
+          {D.box(cx - rootW / 2, cy - rootH / 2, rootW, rootH, { fill: A(0).p, stroke: A(0).p, rx: 12 })}
+          {D.ctext(cx, cy, spec.title, { size: 14, weight: 700, fill: '#fff', maxW: rootW - 20, maxLines: 2 })}
         </g>
       );
-      els.push(<g key="stem">{D.line(360, rootY + rootH, 360, busY, { stroke: '#c9c4bb', sw: 1.8 })}</g>);
-      const topRowN = Math.min(n, cols);
-      const xs = [];
-      for (let k = 0; k < topRowN; k++) xs.push(24 + k * (nw + gap) + nw / 2);
-      if (topRowN > 1) els.push(<g key="bus">{D.line(xs[0], busY, xs[topRowN - 1], busY, { stroke: '#c9c4bb', sw: 1.8 })}</g>);
-      IT.forEach((it, i) => {
-        const c = A(i);
-        const r = Math.floor(i / cols), k = i % cols;
-        const x = 24 + k * (nw + gap);
-        const y = busY + 16 + r * (nh + rowGap);
-        if (r === 0) els.push(<g key={'dl' + i}>{D.line(x + nw / 2, busY, x + nw / 2, y, { stroke: '#c9c4bb', sw: 1.8 })}</g>);
-        else els.push(<g key={'dl' + i}>{D.line(x + nw / 2, y - rowGap + nh, x + nw / 2, y, { stroke: '#c9c4bb', sw: 1.8, dash: '3 4' })}</g>);
-        els.push(
-          <g key={'it' + i}>
-            {D.box(x, y, nw, nh, { fill: c.soft, stroke: c.p, rx: 10 })}
-            {D.ctext(x + nw / 2, y + nh / 2 - (it.detail ? 9 : 0), it.label, { size: 12, weight: 600, fill: c.deep, maxW: nw - 14, maxLines: 2 })}
-            {it.detail ? D.ctext(x + nw / 2, y + nh / 2 + 14, it.detail, { size: 9.5, fill: GREY, maxW: nw - 14, maxLines: 1 }) : null}
-          </g>
-        );
-      });
-      return { h: busY + 16 + rows * (nh + rowGap) - rowGap + 26, el: els };
+      return { h, el: els };
     },
   };
 

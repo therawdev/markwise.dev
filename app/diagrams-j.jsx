@@ -218,11 +218,68 @@
       const A = (i) => palAt(pal, i);
       const t = D.title(spec.title);
       const IT = spec.items, n = IT.length;
+      const variant = spec.variant;
       const rowH = 62, gap = 16;
+      const els = [t.el];
+
+      if (variant === 'split') {
+        // Two pencil columns: left [0..half-1], right [half..n-1]
+        const half = Math.ceil(n / 2);
+        const sides = [IT.slice(0, half), IT.slice(half)];
+        // Left pencil: px=24, right pencil: px=368; pw narrower to fit in half
+        const pw = 40;
+        const sideOrigins = [24, 368];
+        const bannerOffX = pw + 14; // banner x offset from pencil origin
+        const bannerW = 328 - bannerOffX - 4; // banner width per side
+        sides.forEach((sideItems, si) => {
+          const sn = sideItems.length;
+          if (sn === 0) return;
+          const ox = sideOrigins[si];
+          const globalIdx = si === 0 ? 0 : half;
+          const capC = A(globalIdx + sn);
+          const rowsBottom = t.y0 + 44 + sn * (rowH + gap) - gap + 12;
+          const bx = ox + bannerOffX;
+          els.push(
+            <g key={'pencil' + si}>
+              {D.box(ox, t.y0 + 32, pw / 2, rowsBottom - t.y0 - 32, { fill: GREY, stroke: GREY, rx: 0, fillOpacity: 0.18 })}
+              {D.box(ox + pw / 2, t.y0 + 32, pw / 2, rowsBottom - t.y0 - 32, { fill: GREY, stroke: GREY, rx: 0, fillOpacity: 0.32 })}
+              {D.box(ox, t.y0, pw, 34, { fill: capC.p, stroke: capC.p, rx: 8 })}
+              {D.box(ox, t.y0 + 44, pw, 5, { fill: '#fff', stroke: 'none' })}
+              {D.box(ox, t.y0 + 56, pw, 5, { fill: '#fff', stroke: 'none' })}
+              {D.poly([[ox, rowsBottom], [ox + pw, rowsBottom], [ox + pw / 2, rowsBottom + 36]], { fill: GREY, stroke: GREY, fillOpacity: 0.16 })}
+              {D.poly([[ox + pw / 2 - 8, rowsBottom + 22], [ox + pw / 2 + 8, rowsBottom + 22], [ox + pw / 2, rowsBottom + 36]], { fill: GREY, stroke: GREY })}
+            </g>
+          );
+          sideItems.forEach((it, j) => {
+            const gi = globalIdx + j;
+            const c = A(gi);
+            const y = t.y0 + 44 + j * (rowH + gap);
+            const cy = y + rowH / 2;
+            const oneLine = !it.detail;
+            const circX = bx + 22;
+            const textX = bx + 42;
+            const textMaxW = bannerW - 52;
+            els.push(
+              <g key={'it' + gi}>
+                {D.box(bx, y, bannerW, rowH, { fill: c.soft, stroke: c.p, rx: 10 })}
+                {D.circle(circX, cy, 12, { fill: '#fff', stroke: c.p, sw: 1.6 })}
+                {D.ctext(circX, cy, String(gi + 1), { size: 10, weight: 700, fill: c.deep })}
+                {D.text(textX, oneLine ? cy + 5 : y + 26, it.label, { size: 11, weight: 700, fill: c.deep, maxW: it.value ? textMaxW - 52 : textMaxW, maxLines: 1 })}
+                {it.detail ? D.text(textX, y + 47, it.detail, { size: 9.5, fill: GREY, maxW: it.value ? textMaxW - 52 : textMaxW, maxLines: 1 }) : null}
+                {it.value ? D.ctext(bx + bannerW - 8, cy, it.value, { size: 10.5, weight: 700, fill: c.deep, anchor: 'end', maxW: 60, maxLines: 1 }) : null}
+              </g>
+            );
+          });
+        });
+        // Height determined by taller side (left, which has ceil(n/2) items)
+        const tallBottom = t.y0 + 44 + half * (rowH + gap) - gap + 12;
+        return { h: tallBottom + 50, el: els };
+      }
+
+      // Default single-column layout
       const px = 96, pw = 56;
       const capC = A(n);
       const rowsBottom = t.y0 + 44 + n * (rowH + gap) - gap + 12;
-      const els = [t.el];
       els.push(
         <g key="pencil">
           {D.box(px, t.y0 + 32, pw / 2, rowsBottom - t.y0 - 32, { fill: GREY, stroke: GREY, rx: 0, fillOpacity: 0.18 })}
@@ -253,4 +310,8 @@
       return { h: rowsBottom + 56, el: els };
     },
   };
+  D9.pencil.variants = [
+    { id: 'normal', name: 'Single column' },
+    { id: 'split', name: 'Two columns' },
+  ];
 })();

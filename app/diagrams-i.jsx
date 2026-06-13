@@ -12,8 +12,72 @@
     name: 'Info hub',
     render(spec, D, pal) {
       const A = (i) => palAt(pal, i);
+      const variant = spec.variant;
       const t = D.title(spec.title);
       const IT = spec.items, n = IT.length;
+      const short = (spec.title || '').split(/\s+/).slice(0, 6).join(' ');
+
+      if (variant === 'split') {
+        const right = IT.map((it, i) => [it, i]).filter(([, i]) => i % 2 === 0);
+        const left  = IT.map((it, i) => [it, i]).filter(([, i]) => i % 2 === 1);
+        const rows = Math.max(right.length, left.length);
+        const rowH = 84, gap = 14;
+        const bodyH = Math.max(rows * (rowH + gap) - gap, 168);
+        const h = bodyH + 70;
+        const cy = h / 2, cx = 360;
+        const hubC = A(n);
+        const hubW = 160, hubH = Math.min(160, bodyH - 8);
+        const hubX = cx - hubW / 2, hubY = cy - hubH / 2;
+        const bannerW = 226;
+        const bannerXR = cx + hubW / 2 + 24;
+        const bannerXL = cx - hubW / 2 - 24 - bannerW;
+        const els = [t.el];
+        function infohubSide(list, dir) {
+          const bannerX = dir > 0 ? bannerXR : bannerXL;
+          const bannerCx = bannerX + bannerW / 2;
+          const hubEdgeX = dir > 0 ? cx + hubW / 2 : cx - hubW / 2;
+          list.forEach(([it, gi], k) => {
+            const c = A(gi);
+            const y = cy + (k - (list.length - 1) / 2) * (rowH + gap);
+            const itemCy = y + rowH / 2;
+            const sy = hubY + 24 + (k * (hubH - 48)) / Math.max(1, list.length - 1);
+            const vx = dir > 0 ? hubEdgeX + 14 + (k % 3) * 8 : hubEdgeX - 14 - (k % 3) * 8;
+            els.push(
+              <g key={'cn' + gi}>
+                {D.path(`M${hubEdgeX} ${sy}L${vx} ${sy}L${vx} ${itemCy}L${dir > 0 ? bannerX - 4 : bannerX + bannerW + 4} ${itemCy}`, { fill: 'none', stroke: GREY, sw: 1.4 })}
+                {D.circle(hubEdgeX + dir * 4, sy, 4.5, { fill: c.p, stroke: c.p })}
+                {D.circle(dir > 0 ? bannerX - 7 : bannerX + bannerW + 7, itemCy, 4.5, { fill: c.p, stroke: c.p })}
+              </g>
+            );
+            const icoX = dir > 0 ? bannerX + 20 : bannerX + bannerW - 20;
+            const textX = dir > 0 ? bannerX + 48 : bannerX + bannerW - 48;
+            const anchor = dir > 0 ? 'start' : 'end';
+            const textMaxW = bannerW - 72;
+            els.push(
+              <g key={'it' + gi}>
+                {D.box(bannerX, y, bannerW, rowH, { fill: c.soft, stroke: c.p, rx: 12 })}
+                {D.box(dir > 0 ? bannerX + 4 : bannerX + bannerW - 4 - 52, y + 10, 52, rowH - 20, { fill: '#fff', stroke: c.p, rx: 10 })}
+                {window.GlyphIcons
+                  ? window.GlyphIcons.draw(icoX, y + rowH / 2, 26, (it.label || '') + ' ' + (it.detail || ''), c.p, 1.9)
+                  : D.ctext(icoX, y + rowH / 2, String(gi + 1).padStart(2, '0'), { size: 14, weight: 700, fill: c.deep })}
+                {D.text(textX, y + 30, it.label, { size: 12.5, weight: 700, fill: c.deep, maxW: textMaxW, maxLines: 1 })}
+                {it.detail ? D.text(textX, y + 52, it.detail, { size: 10, fill: GREY, maxW: textMaxW, maxLines: 2 }) : null}
+              </g>
+            );
+          });
+        }
+        infohubSide(right, 1);
+        infohubSide(left, -1);
+        els.push(
+          <g key="hub">
+            {D.box(hubX, hubY, hubW, hubH, { fill: hubC.p, stroke: hubC.p, rx: 6, fillOpacity: 0.16 })}
+            {D.box(hubX + 14, hubY + 14, hubW - 28, hubH - 28, { fill: '#fff', stroke: hubC.p, rx: 4 })}
+            {D.ctext(cx, cy, short, { size: 12, weight: 700, fill: hubC.deep, maxW: hubW - 44, maxLines: 5 })}
+          </g>
+        );
+        return { h, el: els };
+      }
+
       const rowH = 84, gap = 14;
       const bodyH = n * (rowH + gap) - gap;
       const els = [t.el];
@@ -21,7 +85,6 @@
       const hubW = 190, hubH = Math.min(168, bodyH - 8);
       const hubX = 30, hubY = t.y0 + bodyH / 2 - hubH / 2;
       const hubR = hubX + hubW;
-      const short = (spec.title || '').split(/\s+/).slice(0, 6).join(' ');
       IT.forEach((it, i) => {
         const c = A(i);
         const y = t.y0 + i * (rowH + gap);
@@ -57,6 +120,10 @@
       return { h: t.y0 + bodyH + 20, el: els };
     },
   };
+  D9.infohub.variants = [
+    { id: 'hub-right', name: 'Hub left' },
+    { id: 'split', name: 'Two sides' },
+  ];
 
   // ---- semicircle: petal cards fanned under a half-circle arc ----
   D9.semicircle = {
@@ -141,9 +208,49 @@
       const A = (i) => palAt(pal, i);
       const t = D.title(spec.title);
       const IT = spec.items, n = IT.length;
-      const hasVal = IT.some((it) => it.value);
+      const variant = spec.variant;
       const rowH = 76, gap = 12;
       const els = [t.el];
+
+      if (variant === 'split') {
+        // Two-column split: left half [24..352], right half [368..W-24]
+        const half = Math.ceil(n / 2);
+        const sides = [IT.slice(0, half), IT.slice(half)];
+        const colX = [24, 368];
+        const colW = 344; // width available per side
+        // tag shape fits in ~220px wide space; desc cell fills the rest
+        const tagW = 178, tagInset = 12;
+        const dxOff = tagW + tagInset; // offset from colX to detail box
+        const dw = colW - dxOff;
+        sides.forEach((sideItems, si) => {
+          const ox = colX[si];
+          const sn = sideItems.length;
+          const cy0 = t.y0 + rowH / 2;
+          const cyN = t.y0 + (sn - 1) * (rowH + gap) + rowH / 2;
+          const spineX = ox + 2;
+          if (sn > 1) els.push(<g key={'spine' + si}>{D.line(spineX, cy0, spineX, cyN, { stroke: GREY, sw: 1.4 })}</g>);
+          sideItems.forEach((it, j) => {
+            const gi = si === 0 ? j : half + j;
+            const c = A(gi);
+            const y = t.y0 + j * (rowH + gap), cy = y + rowH / 2;
+            els.push(
+              <g key={'it' + gi}>
+                {D.poly([[ox - 5, cy], [ox, cy - 5], [ox + 5, cy], [ox, cy + 5]], { fill: GREY, stroke: GREY })}
+                {D.line(ox + 5, cy, ox + 14, cy, { stroke: GREY, sw: 1.2 })}
+                {D.poly([[ox + 14, y + 8], [ox + tagW - 26, y + 8], [ox + tagW, cy], [ox + tagW - 26, y + rowH - 8], [ox + 14, y + rowH - 8]], { fill: c.soft, stroke: c.p })}
+                {D.ctext(ox + tagW / 2, cy, it.label, { size: 11, weight: 700, fill: c.deep, maxW: tagW - 34, maxLines: 2 })}
+                {D.box(ox + dxOff, y + 4, dw, rowH - 8, { fill: '#fff', stroke: c.mid, rx: 8 })}
+                {D.ctext(ox + dxOff + dw / 2, cy, it.detail || '—', { size: 10, fill: GREY, maxW: dw - 18, maxLines: 3 })}
+              </g>
+            );
+          });
+        });
+        const tallSide = half;
+        return { h: t.y0 + tallSide * (rowH + gap) - gap + 18, el: els };
+      }
+
+      // Default single-column layout
+      const hasVal = IT.some((it) => it.value);
       const cy0 = t.y0 + rowH / 2;
       const cyN = t.y0 + (n - 1) * (rowH + gap) + rowH / 2;
       if (n > 1) els.push(<g key="spine">{D.line(22, cy0, 22, cyN, { stroke: GREY, sw: 1.4 })}</g>);
@@ -169,6 +276,10 @@
       return { h: t.y0 + n * (rowH + gap) - gap + 18, el: els };
     },
   };
+  D9.rowtable.variants = [
+    { id: 'normal', name: 'Single column' },
+    { id: 'split', name: 'Two columns' },
+  ];
 
   // ---- sidefunnel: funnel layers with numbered callouts on the left ----
   D9.sidefunnel = {
