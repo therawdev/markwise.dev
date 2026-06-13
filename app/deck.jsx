@@ -380,6 +380,7 @@
     const builtRef = useRef(restoredBuiltRef.current);
     const skipAutoGenRef = useRef(restoredUnchanged);
     const dirtyRef = useRef(false); // user changed something this session (guards cross-device overwrite)
+    const forceGenRef = useRef(false); // "Regenerate" rebuilds every text slide, not just long ones
 
     const [order, setOrder] = useState(() => (snap0 && snap0.order) || null);
     const [ov, setOv] = useState(() => (snap0 && snap0.ov) || {});
@@ -538,7 +539,9 @@
       baseSlides.forEach((sl, oi) => {
         const d = distilled[oi];
         const fresh = d && d.key === slideKey(sl);
-        if (sl.kind === 'content' && window.GlyphAI.needsCondense(sl.paras) && !(fresh && d.paras)) need.push({ oi, type: 'paras' });
+        const hasText = (sl.paras || []).some((p) => String(p).trim());
+        const wantParas = sl.kind === 'content' && hasText && (forceGenRef.current || window.GlyphAI.needsCondense(sl.paras));
+        if (wantParas && !(fresh && d.paras)) need.push({ oi, type: 'paras' });
         if (sl.kind === 'title' && sl.sub && sl.sub.length > 200 && !(fresh && d.sub)) need.push({ oi, type: 'sub' });
       });
       if (!need.length) { advance(); return; }
@@ -604,6 +607,7 @@
     // show the "generating" screen again (each section regenerates), keeping theme/layout/visual work
     const regenerateAll = () => {
       dirtyRef.current = true;
+      forceGenRef.current = true; // rewrite every slide that has text, not only the long ones
       for (const k in condenseCache) delete condenseCache[k]; // force fresh AI, not the session cache
       setDistilled({});
       setEdited({});
@@ -864,13 +868,15 @@
               </div>
               <div className="gen-list">
                 {genRows.map(({ sl, oi }) => {
-                  const needed = window.GlyphAI && window.GlyphAI.needsCondense(sl.paras);
-                  const done = !needed || !!(distilled[oi] && distilled[oi].paras);
+                  const hasText = (sl.paras || []).some((p) => String(p).trim());
+                  const generated = !!(distilled[oi] && distilled[oi].paras);
+                  const needs = hasText && (forceGenRef.current || (window.GlyphAI && window.GlyphAI.needsCondense(sl.paras)));
+                  const done = generated || !needs;
                   return (
-                    <div key={oi} className={'gen-row' + (done ? ' done' : '')}>
-                      <span className="gen-dot">{done ? '✓' : ''}</span>
+                    <div key={oi} className={'gen-row' + (done ? ' done' : '') + (!hasText ? ' notext' : '')}>
+                      <span className="gen-dot">{generated ? '✓' : needs ? '' : '–'}</span>
                       <span className="gen-name">{sl.title}</span>
-                      {sl.visual ? <span className="gen-vis" title="This section's diagram goes on the slide">⬡ diagram</span> : null}
+                      {sl.visual ? <span className="gen-vis" title={hasText ? "This section's diagram goes on the slide" : 'Visual-only slide — no text to rewrite'}>⬡ diagram{!hasText ? ' · no text' : ''}</span> : null}
                     </div>
                   );
                 })}
