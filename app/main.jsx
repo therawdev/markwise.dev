@@ -743,11 +743,20 @@
       }));
     }
     const addTextAfter = useCallback((id) => {
-      setBlocks((bs) => {
-        const i = bs.findIndex((b) => b.id === id);
-        const nb = { id: 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), kind: 'text', tag: 'p', html: '', autoFocus: true };
-        const next = bs.slice();
-        next.splice(i + 1, 0, nb);
+      const bs = blocksRef.current;
+      const i = bs.findIndex((b) => b.id === id);
+      // Notion-like: if there's already an empty line right after, just put the
+      // cursor there instead of stacking another blank block.
+      const nx = bs[i + 1];
+      if (nx && nx.kind === 'text' && !(nx.html || '').replace(/<br>/gi, '').trim()) {
+        focusEdge(nx.id, 'start');
+        return;
+      }
+      const nid = newBlockId();
+      setBlocks((cur) => {
+        const j = cur.findIndex((b) => b.id === id);
+        const next = cur.slice();
+        next.splice(j + 1, 0, { id: nid, kind: 'text', tag: 'p', html: '', autoFocus: true });
         return next;
       });
     }, []);
@@ -885,8 +894,8 @@
                         dragging={dragBlk === b.id}
                       />
                     )}
-                    <div className="block-gap" contentEditable={false}>
-                      <button className="block-gap-btn" onClick={() => addTextAfter(b.id)}>+ Text</button>
+                    <div className="block-gap" contentEditable={false} onClick={() => addTextAfter(b.id)} title="Click to add a line">
+                      <span className="block-gap-btn">+ Text</span>
                     </div>
                   </React.Fragment>
                 ))}

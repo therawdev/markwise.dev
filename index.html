@@ -762,8 +762,9 @@
   .vis-block { touch-action: none; }
 
   /* ---------- block inserter & empty paragraphs ---------- */
-  .block-gap { position: relative; height: 14px; margin: -7px 0; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity .12s; z-index: 4; }
+  .block-gap { position: relative; height: 22px; margin: -11px 0; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity .12s; z-index: 4; cursor: text; }
   .block-gap:hover { opacity: 1; }
+  .block-gap-btn { cursor: pointer; }
   .block-gap::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1.5px; background: var(--accent-soft); }
   .block-gap-btn {
     position: relative; z-index: 1; background: #fff; border: 1px solid var(--hairline); border-radius: 999px;
