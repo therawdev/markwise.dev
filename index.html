@@ -791,7 +791,7 @@
     50% { box-shadow: 0 2px 18px rgba(47,109,240,.5); }
   }
   @media (prefers-reduced-motion: reduce) { .sec-viz.suggested { animation: none; } }
-  .tb.sec-active { box-shadow: inset 3px 0 0 var(--accent-soft); border-radius: 2px; transition: box-shadow .14s; }
+  .tb.sec-active { box-shadow: inset 4px 0 0 var(--accent); background: var(--accent-soft); border-radius: 3px; transition: box-shadow .14s, background .14s; }
 
   /* ---------- panel: item footer & layout hint ---------- */
   .item-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
