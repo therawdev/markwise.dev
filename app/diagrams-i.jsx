@@ -58,7 +58,7 @@
                 {D.box(bannerX, y, bannerW, rowH, { fill: c.soft, stroke: c.p, rx: 12 })}
                 {D.box(dir > 0 ? bannerX + 4 : bannerX + bannerW - 4 - 52, y + 10, 52, rowH - 20, { fill: '#fff', stroke: c.p, rx: 10 })}
                 {window.GlyphIcons
-                  ? window.GlyphIcons.draw(icoX, y + rowH / 2, 26, (it.label || '') + ' ' + (it.detail || ''), c.p, 1.9)
+                  ? window.GlyphIcons.draw(icoX, y + rowH / 2, 26, it.icon || (it.label || '') + ' ' + (it.detail || ''), c.p, 1.9)
                   : D.ctext(icoX, y + rowH / 2, String(gi + 1).padStart(2, '0'), { size: 14, weight: 700, fill: c.deep })}
                 {D.text(textX, y + 30, it.label, { size: 12.5, weight: 700, fill: c.deep, maxW: textMaxW, maxLines: 1 })}
                 {it.detail ? D.text(textX, y + 52, it.detail, { size: 10, fill: GREY, maxW: textMaxW, maxLines: 2 }) : null}
@@ -102,7 +102,7 @@
           <g key={'it' + i}>
             {D.box(300, y + 10, 62, rowH - 20, { fill: '#fff', stroke: c.p, rx: 10 })}
             {window.GlyphIcons
-              ? window.GlyphIcons.draw(331, cy, 30, (it.label || '') + ' ' + (it.detail || ''), c.p, 1.9)
+              ? window.GlyphIcons.draw(331, cy, 30, it.icon || (it.label || '') + ' ' + (it.detail || ''), c.p, 1.9)
               : D.ctext(331, cy, String(i + 1).padStart(2, '0'), { size: 15, weight: 700, fill: c.deep })}
             {D.box(374, y, W - 24 - 374, rowH, { fill: c.soft, stroke: c.p, rx: 12 })}
             {D.text(396, y + 30, it.label, { size: 13.5, weight: 700, fill: c.deep, maxW: W - 24 - 418, maxLines: 1 })}

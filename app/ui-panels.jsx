@@ -3,6 +3,61 @@
   const { useState, useRef, useEffect } = React;
   const { PALETTES, STYLES } = window.GlyphDraw;
 
+  // ---------- per-item Lucide icon picker ----------
+  const COMMON_ICONS = [
+    'shield', 'lock', 'key', 'eye', 'alert-triangle', 'bug', 'check-circle', 'zap',
+    'rocket', 'trending-up', 'trending-down', 'target', 'flag', 'star', 'heart', 'award',
+    'users', 'user', 'briefcase', 'building', 'globe', 'map-pin', 'mail', 'message-circle',
+    'database', 'server', 'cpu', 'cloud', 'code', 'git-branch', 'terminal', 'settings',
+    'dollar-sign', 'credit-card', 'bar-chart', 'pie-chart', 'activity', 'clock', 'calendar', 'layers',
+    'lightbulb', 'search', 'file-text', 'folder', 'link', 'refresh-cw', 'wrench', 'package',
+  ];
+  function IconThumb({ name, color }) {
+    const G = window.GlyphIcons;
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" style={{ display: 'block' }}>
+        {G ? G.draw(12, 12, 24, name, color || 'currentColor', 1.8) : null}
+      </svg>
+    );
+  }
+  function IconPicker({ value, onChange }) {
+    const [open, setOpen] = useState(false);
+    const [q, setQ] = useState('');
+    const ref = useRef(null);
+    useEffect(() => {
+      if (!open) return;
+      const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+      document.addEventListener('mousedown', close);
+      return () => document.removeEventListener('mousedown', close);
+    }, [open]);
+    const G = window.GlyphIcons;
+    const all = (G && G.hasLucide && G.hasLucide()) ? G.lucideNames() : [];
+    const list = q.trim()
+      ? all.filter((n) => n.includes(q.trim().toLowerCase())).slice(0, 60)
+      : COMMON_ICONS;
+    return (
+      <div className="icon-pick" ref={ref}>
+        <button className={'icon-pick-btn' + (value ? ' set' : '')} title={value ? 'Icon: ' + value : 'Choose an icon'}
+          onClick={() => setOpen((o) => !o)}>
+          {value ? <IconThumb name={value} /> : <span className="icon-pick-auto">+ icon</span>}
+        </button>
+        {open ? (
+          <div className="icon-pick-pop" onClick={(e) => e.stopPropagation()}>
+            <input className="fld sm" autoFocus placeholder="Search 1000+ icons…" value={q} onChange={(e) => setQ(e.target.value)} />
+            <div className="icon-grid">
+              <button className="icon-cell auto" title="Auto (match by label)" onClick={() => { onChange(null); setOpen(false); }}>Auto</button>
+              {list.map((n) => (
+                <button key={n} className={'icon-cell' + (n === value ? ' on' : '')} title={n} onClick={() => { onChange(n); setOpen(false); }}>
+                  <IconThumb name={n} />
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   // ---------- export helpers ----------
   function svgString(el) {
     const c = el.cloneNode(true);
@@ -250,6 +305,7 @@
                     <input className="fld sm val" value={it.value || ''} placeholder="Value" onChange={(e) => setItem(i, { value: e.target.value || null })} />
                   </div>
                   <div className="item-foot">
+                    <IconPicker value={it.icon || null} onChange={(name) => setItem(i, { icon: name })} />
                     <ItemColorDots value={it.color == null ? null : it.color} onChange={(c) => setItem(i, { color: c })} />
                     <Seg options={[[0.85, 'S'], [1, 'M'], [1.2, 'L'], [1.45, 'XL']]} value={it.scale || 1} onChange={(v) => setItem(i, { scale: v })} />
                   </div>

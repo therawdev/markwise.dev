@@ -774,6 +774,27 @@
 
   /* ---------- panel: item footer & layout hint ---------- */
   .item-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  /* per-item icon picker */
+  .icon-pick { position: relative; }
+  .icon-pick-btn {
+    display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 3px 7px;
+    border: 1px solid var(--hairline); border-radius: 7px; background: #fff; color: var(--ink); cursor: pointer; font-size: 11px;
+  }
+  .icon-pick-btn.set { color: var(--accent); border-color: var(--accent); }
+  .icon-pick-btn:hover { border-color: var(--accent); }
+  .icon-pick-auto { color: var(--grey); font-weight: 600; }
+  .icon-pick-pop {
+    position: absolute; z-index: 50; bottom: 30px; left: 0; width: 232px; padding: 8px;
+    background: #fff; border: 1px solid var(--hairline); border-radius: 10px; box-shadow: 0 10px 30px rgba(20,18,14,.16);
+  }
+  .icon-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 7px; max-height: 188px; overflow-y: auto; }
+  .icon-cell {
+    display: grid; place-items: center; aspect-ratio: 1; border: 1px solid transparent; border-radius: 6px;
+    background: var(--bg); color: var(--ink); cursor: pointer; padding: 0;
+  }
+  .icon-cell:hover { border-color: var(--accent); background: #fff; }
+  .icon-cell.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .icon-cell.auto { grid-column: span 7; aspect-ratio: auto; padding: 5px; font-size: 11px; font-weight: 600; color: var(--grey); }
   .fld-hint { font-weight: 500; color: #b8b3aa; font-size: 10px; margin-left: 6px; text-transform: none; letter-spacing: 0; }
 
   /* ---------- arrows & lines panel ---------- */
@@ -811,6 +832,7 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
 <div id="root"></div>

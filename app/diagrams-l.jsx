@@ -320,7 +320,7 @@
         els.push(
           <g key={'it' + i}>
             {D.circle(x, y, 29, { fill: c.p, stroke: c.p })}
-            {Ic ? Ic.draw(x, y, 28, (it.label || '') + ' ' + (it.detail || ''), noFill ? c.p : '#fff', 2) : null}
+            {Ic ? Ic.draw(x, y, 28, it.icon || (it.label || '') + ' ' + (it.detail || ''), noFill ? c.p : '#fff', 2) : null}
           </g>
         );
         const side = cosA > 0.38 ? 1 : cosA < -0.38 ? -1 : 0;

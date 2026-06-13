@@ -63,7 +63,7 @@
               <g key={'it' + gi}>
                 {D.box(pillX, y - pillH / 2, pillW, pillH, { fill: c.soft, stroke: c.p, rx: pillH / 2 })}
                 {D.circle(iconX, y, icoR + 5, { fill: '#fff', stroke: c.p, sw: 3.5 })}
-                {I.draw(iconX, y, icoR + 1, (it.label || '') + ' ' + (it.detail || ''), c.deep, 2)}
+                {I.draw(iconX, y, icoR + 1, it.icon || (it.label || '') + ' ' + (it.detail || ''), c.deep, 2)}
                 {D.ctext(textX, y - (it.detail ? 10 : 0), it.label + (it.value ? '  ·  ' + it.value : ''), { size: 12.5, weight: 700, fill: c.deep, anchor, maxW: textMaxW, maxLines: 1 })}
                 {it.detail ? D.ctext(textX, y + 13, it.detail, { size: 10, fill: c.deep === '#1d1b18' ? GREY : c.deep, anchor, maxW: textMaxW, maxLines: 1 }) : null}
               </g>
@@ -106,7 +106,7 @@
           <g key={'it' + i}>
             {D.box(pillX, y - pillH / 2, pillW, pillH, { fill: c.soft, stroke: c.p, rx: pillH / 2 })}
             {D.circle(pillX + 4, y, icoR + 5, { fill: '#fff', stroke: c.p, sw: 3.5 })}
-            {I.draw(pillX + 4, y, icoR + 1, (it.label || '') + ' ' + (it.detail || ''), c.deep, 2)}
+            {I.draw(pillX + 4, y, icoR + 1, it.icon || (it.label || '') + ' ' + (it.detail || ''), c.deep, 2)}
             {D.ctext(pillX + icoR + 26, y - (it.detail ? 10 : 0), it.label + (it.value ? '  ·  ' + it.value : ''), { size: 13.5, weight: 700, fill: c.deep, anchor: 'start', maxW: pillW - icoR - 50, maxLines: 1 })}
             {it.detail ? D.ctext(pillX + icoR + 26, y + 13, it.detail, { size: 10.5, fill: c.deep === '#1d1b18' ? GREY : c.deep, anchor: 'start', maxW: pillW - icoR - 50, maxLines: 1 }) : null}
           </g>
@@ -188,7 +188,7 @@
         const c = A(i);
         const mid = -90 + (i + 0.5) * per;
         const [ix, iy] = polar(cx, cy, (R + r) / 2 + 4, mid);
-        els.push(<g key={'ico' + i}>{I.draw(ix, iy, 22, (it.label || '') + ' ' + (it.detail || ''), '#fff', 2)}</g>);
+        els.push(<g key={'ico' + i}>{I.draw(ix, iy, 22, it.icon || (it.label || '') + ' ' + (it.detail || ''), '#fff', 2)}</g>);
         const [lx, ly] = polar(cx, cy, R + 48, mid);
         const side = Math.cos((mid * Math.PI) / 180);
         const anchor = Math.abs(side) < 0.3 ? 'middle' : side > 0 ? 'start' : 'end';
@@ -235,7 +235,7 @@
         const y = t.y0 + 22 + i * Math.min(44, Math.max(34, (2 * R) / n + 6));
         els.push(
           <g key={'it' + i}>
-            {I.draw(376, y, 20, (it.label || '') + ' ' + (it.detail || ''), c.p, 2)}
+            {I.draw(376, y, 20, it.icon || (it.label || '') + ' ' + (it.detail || ''), c.p, 2)}
             {D.ctext(396, y - (it.detail ? 8 : 0), it.label + (it.value ? '  ·  ' + it.value : ''), { size: 12.5, weight: 700, fill: c.deep, anchor: 'start', maxW: 295, maxLines: 1 })}
             {it.detail ? D.ctext(396, y + 12, it.detail, { size: 10, fill: GREY, anchor: 'start', maxW: 295, maxLines: 1 }) : null}
           </g>
@@ -295,7 +295,7 @@
         const txx = left ? ix - 34 : ix + 34;
         els.push(
           <g key={'it' + i}>
-            {I.draw(ix, y, 26, (it.label || '') + ' ' + (it.detail || ''), c.p, 1.9)}
+            {I.draw(ix, y, 26, it.icon || (it.label || '') + ' ' + (it.detail || ''), c.p, 1.9)}
             {D.ctext(txx, y - 4, it.label + (it.value ? ' · ' + it.value : ''), { size: 13.5, weight: 700, fill: c.p, anchor, maxW: 168, maxLines: 2 })}
             {it.detail ? D.ctext(txx, y + 18, it.detail, { size: 10.5, fill: GREY, anchor, maxW: 168, maxLines: 2 }) : null}
           </g>
@@ -327,7 +327,7 @@
         const d = `M${xa} ${cy - ha / 2} L${xb} ${cy - hb / 2} A${rxAt(hb)} ${hb / 2} 0 0 1 ${xb} ${cy + hb / 2} L${xa} ${cy + ha / 2} A${rxAt(ha)} ${ha / 2} 0 0 0 ${xa} ${cy - ha / 2} Z`;
         els.push(<g key={'seg' + i}>{D.path(d, { fill: c.p, fillOpacity: 0.85, stroke: '#fff', sw: 2 })}</g>);
         const xm = (xa + xb) / 2, hm = hAt((fa + fb) / 2);
-        if (xb - xa > 52 && hm > 64) els.push(<g key={'ico' + i}>{I.draw(xm + rxAt(hm) / 2, cy, Math.min(26, hm * 0.32), (it.label || '') + ' ' + (it.detail || ''), '#fff', 2)}</g>);
+        if (xb - xa > 52 && hm > 64) els.push(<g key={'ico' + i}>{I.draw(xm + rxAt(hm) / 2, cy, Math.min(26, hm * 0.32), it.icon || (it.label || '') + ' ' + (it.detail || ''), '#fff', 2)}</g>);
         const up = i % 2 === 0;
         const ly = up ? cy - h0 / 2 - 40 : cy + h0 / 2 + 44;
         const edgeY = up ? cy - hm / 2 - 6 : cy + hm / 2 + 6;
@@ -375,7 +375,7 @@
         els.push(<g key={'conv' + i}>{D.arrow(lensX + 22, y + (cyMid - y) * 0.12, 584, ty, { stroke: c.p, sw: 1.7 })}</g>);
         els.push(
           <g key={'it' + i}>
-            {I.draw(232, y, 25, (it.label || '') + ' ' + (it.detail || ''), c.p, 1.9)}
+            {I.draw(232, y, 25, it.icon || (it.label || '') + ' ' + (it.detail || ''), c.p, 1.9)}
             {D.ctext(206, y - (it.detail && rowH > 52 ? 8 : 0), it.label + (it.value ? ' · ' + it.value : ''), { size: 13, weight: 600, fill: c.deep, anchor: 'end', maxW: 168, maxLines: 1 })}
             {it.detail && rowH > 52 ? D.ctext(206, y + 13, it.detail, { size: 10, fill: GREY, anchor: 'end', maxW: 168, maxLines: 1 }) : null}
           </g>
