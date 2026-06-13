@@ -6,10 +6,11 @@
 Respond with ONLY valid JSON. No markdown fences, no commentary.
 Schema:
 {"title":"short title, 3-6 words",
- "items":[{"label":"2-5 word phrase","detail":"supporting phrase, max 9 words or null","value":"short stat like 40%, $2M, Sep 15, else null"}],
+ "items":[{"label":"2-5 word phrase","detail":"supporting phrase, max 9 words or null","value":"short stat like 40%, $2M, Sep 15, else null","children":["1-3 word sub-point", "..."] }],
  "best":["type","type","type"]}
 Rules:
 - 3 to 12 items, drawn faithfully from the passage. Never invent facts. Use as many items as the passage genuinely contains.
+- "children" is OPTIONAL: include 2-5 very short (1-3 word) sub-points ONLY when an item clearly breaks into sub-parts in the passage (e.g. "USB, Bluetooth, WiFi" → ["USB","Bluetooth","WiFi"]). Omit the field entirely otherwise. Sub-points must come from the passage; never invent them. The detail still holds the prose summary.
 - Items must form ONE coherent set: the same kind of thing along a single dimension (all risks, all phases, all metrics, all options…). If the passage mixes kinds — e.g. risk areas plus methodology notes plus facts about the document itself — keep only the set the passage is mainly about and DROP the rest. Fewer coherent items beat more mixed ones.
 - The title says what the items collectively ARE, and no more. If the passage merely describes themes or trends of an official list without enumerating it, the title must say "themes"/"trends" — never present them as the official list itself.
 - Never repeat the title (or the passage's heading) as an item — items sit beneath the title.
@@ -125,11 +126,22 @@ PASSAGE:
     if (!j || typeof j !== 'object' || !Array.isArray(j.items)) return fallbackSpec(text);
     let items = j.items
       .filter((it) => it && (it.label || it.detail))
-      .map((it) => ({
-        label: String(it.label || it.detail || '').trim().slice(0, 60),
-        detail: it.detail ? String(it.detail).trim().slice(0, 90) : null,
-        value: it.value ? String(it.value).trim().slice(0, 16) : null,
-      }))
+      .map((it) => {
+        const out = {
+          label: String(it.label || it.detail || '').trim().slice(0, 60),
+          detail: it.detail ? String(it.detail).trim().slice(0, 90) : null,
+          value: it.value ? String(it.value).trim().slice(0, 16) : null,
+        };
+        // optional sub-points (used by the hierarchical mindmap)
+        if (Array.isArray(it.children)) {
+          const kids = it.children
+            .map((c) => String(typeof c === 'string' ? c : (c && c.label) || '').trim().slice(0, 32))
+            .filter(Boolean)
+            .slice(0, 5);
+          if (kids.length) out.children = kids;
+        }
+        return out;
+      })
       .slice(0, 12);
     if (items.length < 3) return fallbackSpec(text);
     // an item must never restate the title

@@ -54,17 +54,83 @@
     { id: 'pills', name: 'Pill ring' },
   ];
 
+  // child sub-nodes for the hierarchical mindmap: use explicit item.children if
+  // present, otherwise derive them by splitting the detail on ; , and "and".
+  const mmCap = (s) => { s = String(s || '').trim().replace(/^[\-•*\d.\)\s]+/, ''); return s ? s[0].toUpperCase() + s.slice(1) : s; };
+  const mmChildren = (it) => {
+    if (Array.isArray(it.children) && it.children.length) {
+      return it.children.map((c) => ({ label: mmCap(typeof c === 'string' ? c : (c && c.label) || '') })).filter((c) => c.label).slice(0, 5);
+    }
+    if (it.detail) {
+      const parts = String(it.detail).split(/\s*[;,]\s*|\s+and\s+/i).map((s) => s.trim()).filter((s) => s.length > 1);
+      if (parts.length >= 2) return parts.slice(0, 4).map((p) => ({ label: mmCap(p).slice(0, 32) }));
+    }
+    return [];
+  };
+
   D9.mindmap = {
     name: 'Mindmap',
     render(spec, D, pal) {
       const A = (i) => palAt(pal, i);
       const IT = spec.items;
+      const cx = 360;
+
+      // ----- hierarchical variant: center -> branches -> sub-nodes -----
+      if ((spec.variant || 'branches') === 'subnodes') {
+        const enriched = IT.map((it, i) => ({ it, gi: i, kids: mmChildren(it) }));
+        const left = enriched.filter((e) => e.gi % 2 === 0);
+        const right = enriched.filter((e) => e.gi % 2 === 1);
+        const childRowH = 30, branchGap = 20, nodeH = 50, nodeW = 124, pillW = 98, pillH = 22;
+        const sideH = (list) => Math.max(60, list.reduce((s, e) => s + Math.max(nodeH, e.kids.length * childRowH) + branchGap, 0) - branchGap);
+        const h = Math.max(sideH(left), sideH(right), 200) + 56;
+        const cy = h / 2;
+        const els = [];
+        const side = (list, dir) => {
+          let y = cy - sideH(list) / 2;
+          list.forEach((e) => {
+            const c = A(e.gi);
+            const blockH = Math.max(nodeH, e.kids.length * childRowH);
+            const bcy = y + blockH / 2;
+            const nodeX = dir > 0 ? cx + 70 : cx - 70 - nodeW;
+            const ncx = nodeX + nodeW / 2;
+            const edgeOut = dir > 0 ? nodeX + nodeW : nodeX;
+            const edgeIn = dir > 0 ? nodeX : nodeX + nodeW;
+            const sx = cx + dir * 58;
+            els.push(<path key={'c' + e.gi} d={`M${sx} ${cy} C ${sx + dir * 46} ${cy}, ${edgeIn - dir * 40} ${bcy}, ${edgeIn} ${bcy}`} fill="none" stroke={c.mid} strokeWidth={2} />);
+            els.push(
+              <g key={'n' + e.gi}>
+                {D.box(nodeX, bcy - nodeH / 2, nodeW, nodeH, { fill: c.soft, stroke: c.p, rx: 12 })}
+                {D.ctext(ncx, bcy, e.it.label, { size: 11.5, weight: 700, fill: c.deep, maxW: nodeW - 14, maxLines: 2 })}
+              </g>
+            );
+            e.kids.forEach((k, ki) => {
+              const ky = y + ki * childRowH + childRowH / 2;
+              const px = dir > 0 ? edgeOut + 26 : edgeOut - 26 - pillW;
+              const pin = dir > 0 ? px : px + pillW;
+              els.push(<path key={'ck' + e.gi + '_' + ki} d={`M${edgeOut} ${bcy} C ${edgeOut + dir * 16} ${bcy}, ${pin - dir * 16} ${ky}, ${pin} ${ky}`} fill="none" stroke={c.mid} strokeWidth={1.3} />);
+              els.push(
+                <g key={'k' + e.gi + '_' + ki}>
+                  {D.box(px, ky - pillH / 2, pillW, pillH, { fill: '#fff', stroke: c.mid, rx: 11 })}
+                  {D.ctext(px + pillW / 2, ky, k.label, { size: 9, weight: 600, fill: c.deep, maxW: pillW - 10, maxLines: 1 })}
+                </g>
+              );
+            });
+            y += blockH + branchGap;
+          });
+        };
+        side(left, -1);
+        side(right, 1);
+        els.push(<g key="ctr">{D.ellipse(cx, cy, 62, 40, { fill: A(0).p, stroke: A(0).p })}{D.ctext(cx, cy, spec.title, { size: 12.5, weight: 700, fill: '#fff', maxW: 108, maxLines: 3 })}</g>);
+        return { h, el: els };
+      }
+
+      // ----- default: single-level branches -----
       const right = IT.map((it, i) => [it, i]).filter(([, i]) => i % 2 === 0);
       const left = IT.map((it, i) => [it, i]).filter(([, i]) => i % 2 === 1);
       const rows = Math.max(right.length, left.length);
       const rowH = 74;
       const h = Math.max(rows * rowH + 70, 250);
-      const cy = h / 2, cx = 360;
+      const cy = h / 2;
       const nw = 196, nh = 50;
       const els = [];
       els.push(<g key="ctr">{D.ellipse(cx, cy, 112, 46, { fill: A(0).p, stroke: A(0).p })}{D.ctext(cx, cy, spec.title, { size: 15, weight: 700, fill: '#fff', maxW: 196, maxLines: 2 })}</g>);
@@ -91,6 +157,10 @@
       return { h, el: els };
     },
   };
+  D9.mindmap.variants = [
+    { id: 'branches', name: 'Branches' },
+    { id: 'subnodes', name: 'Sub-branches' },
+  ];
 
   D9.venn = {
     name: 'Venn',

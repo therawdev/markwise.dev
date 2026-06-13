@@ -324,6 +324,59 @@
     render(spec, D, pal) {
       const A = (i) => palAt(pal, i);
       const IT = spec.items;
+      const variant = spec.variant || 'twosided';
+
+      // ----- indented (file-explorer) tree -----
+      if (variant === 'indented') {
+        const t = D.title(spec.title);
+        const n = IT.length, rowH = 50;
+        const rootW = Math.min(W - 48, 340), rootH = 50, rootX = 24, rootY = t.y0;
+        const spineX = rootX + 26;
+        const els = [t.el];
+        els.push(<g key="root">{D.box(rootX, rootY, rootW, rootH, { fill: A(0).p, stroke: A(0).p, rx: 12 })}{D.ctext(rootX + rootW / 2, rootY + rootH / 2, spec.title, { size: 14, weight: 700, fill: '#fff', maxW: rootW - 20, maxLines: 1 })}</g>);
+        const firstY = rootY + rootH + 14 + rowH / 2;
+        const lastY = firstY + (n - 1) * rowH;
+        els.push(<g key="spine">{D.line(spineX, rootY + rootH, spineX, lastY, { stroke: '#c9c4bb', sw: 1.8 })}</g>);
+        const ibx = spineX + 26, ibw = W - 24 - ibx, ih = 40;
+        IT.forEach((it, i) => {
+          const c = A(i), y = firstY + i * rowH;
+          els.push(<g key={'el' + i}>{D.line(spineX, y, ibx, y, { stroke: '#c9c4bb', sw: 1.8 })}</g>);
+          els.push(
+            <g key={'it' + i}>
+              {D.box(ibx, y - ih / 2, ibw, ih, { fill: c.soft, stroke: c.p, rx: 8 })}
+              {D.ctext(ibx + 14, y - (it.detail ? 8 : 0), it.label, { size: 12.5, weight: 600, fill: c.deep, anchor: 'start', maxW: ibw - 28 - (it.value ? 60 : 0), maxLines: 1 })}
+              {it.detail ? D.ctext(ibx + 14, y + 11, it.detail, { size: 9.5, fill: GREY, anchor: 'start', maxW: ibw - 28, maxLines: 1 }) : null}
+              {it.value ? D.ctext(ibx + ibw - 12, y, it.value, { size: 11.5, weight: 700, fill: c.p, anchor: 'end', maxW: 56, maxLines: 1 }) : null}
+            </g>
+          );
+        });
+        return { h: lastY + ih / 2 + 24, el: els };
+      }
+
+      // ----- top-down grid (the previous layout) -----
+      if (variant === 'grid') {
+        const t = D.title(spec.title);
+        const n = IT.length;
+        const { cols, rows } = grid(n, 4);
+        const gap = 14, nh = 62, rowGap = 46;
+        const nw = (W - 48 - (cols - 1) * gap) / cols;
+        const rootW = 220, rootH = 54, rootX = 360 - rootW / 2, rootY = t.y0, busY = rootY + rootH + 24;
+        const els = [t.el];
+        els.push(<g key="root">{D.box(rootX, rootY, rootW, rootH, { fill: A(0).p, stroke: A(0).p, rx: 12 })}{D.ctext(360, rootY + rootH / 2, spec.title, { size: 14, weight: 700, fill: '#fff', maxW: rootW - 20, maxLines: 2 })}</g>);
+        els.push(<g key="stem">{D.line(360, rootY + rootH, 360, busY, { stroke: '#c9c4bb', sw: 1.8 })}</g>);
+        const topRowN = Math.min(n, cols), xs = [];
+        for (let k = 0; k < topRowN; k++) xs.push(24 + k * (nw + gap) + nw / 2);
+        if (topRowN > 1) els.push(<g key="bus">{D.line(xs[0], busY, xs[topRowN - 1], busY, { stroke: '#c9c4bb', sw: 1.8 })}</g>);
+        IT.forEach((it, i) => {
+          const c = A(i), r = Math.floor(i / cols), k = i % cols, x = 24 + k * (nw + gap), y = busY + 16 + r * (nh + rowGap);
+          if (r === 0) els.push(<g key={'dl' + i}>{D.line(x + nw / 2, busY, x + nw / 2, y, { stroke: '#c9c4bb', sw: 1.8 })}</g>);
+          else els.push(<g key={'dl' + i}>{D.line(x + nw / 2, y - rowGap + nh, x + nw / 2, y, { stroke: '#c9c4bb', sw: 1.8, dash: '3 4' })}</g>);
+          els.push(<g key={'it' + i}>{D.box(x, y, nw, nh, { fill: c.soft, stroke: c.p, rx: 10 })}{D.ctext(x + nw / 2, y + nh / 2 - (it.detail ? 9 : 0), it.label, { size: 12, weight: 600, fill: c.deep, maxW: nw - 14, maxLines: 2 })}{it.detail ? D.ctext(x + nw / 2, y + nh / 2 + 14, it.detail, { size: 9.5, fill: GREY, maxW: nw - 14, maxLines: 1 }) : null}</g>);
+        });
+        return { h: busY + 16 + rows * (nh + rowGap) - rowGap + 26, el: els };
+      }
+
+      // ----- two-sided org tree (default) -----
       const left = IT.map((it, i) => [it, i]).filter(([, i]) => i % 2 === 0);
       const right = IT.map((it, i) => [it, i]).filter(([, i]) => i % 2 === 1);
       const rows = Math.max(left.length, right.length, 1);
@@ -364,6 +417,11 @@
       return { h, el: els };
     },
   };
+  D9.tree.variants = [
+    { id: 'twosided', name: 'Two sides' },
+    { id: 'indented', name: 'Indented' },
+    { id: 'grid', name: 'Top-down grid' },
+  ];
 
   D9.fishbone = {
     name: 'Fishbone',
