@@ -58,15 +58,19 @@
     for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
     return u8;
   }
+  // child elements are emitted in OOXML schema order (Word rejects out-of-order rPr/pPr)
   function run(text, o) {
     o = o || {};
     const rpr = [];
+    if (o.mono) rpr.push('<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas" w:cs="Consolas"/>');
     if (o.bold) rpr.push('<w:b/>');
     if (o.italic) rpr.push('<w:i/>');
-    if (o.color) rpr.push(`<w:color w:val="${o.color}"/>`);
-    if (o.size) rpr.push(`<w:sz w:val="${o.size}"/>`);
     if (o.caps) rpr.push('<w:caps/>');
+    if (o.strike) rpr.push('<w:strike/>');
+    if (o.color) rpr.push(`<w:color w:val="${o.color}"/>`);
     if (o.ls != null) rpr.push(`<w:spacing w:val="${o.ls}"/>`);
+    if (o.size) rpr.push(`<w:sz w:val="${o.size}"/>`);
+    if (o.under) rpr.push('<w:u w:val="single"/>');
     if (o.shade) rpr.push(`<w:shd w:val="clear" w:color="auto" w:fill="${o.shade}"/>`);
     const r = rpr.length ? `<w:rPr>${rpr.join('')}</w:rPr>` : '';
     return `<w:r>${r}<w:t xml:space="preserve">${esc(text)}</w:t></w:r>`;
@@ -74,34 +78,140 @@
   function para(runs, o) {
     o = o || {};
     const ppr = [];
+    if (o.leftBorder) ppr.push(`<w:pBdr><w:left w:val="single" w:sz="${o.leftBorder}" w:space="8" w:color="${o.leftBorderColor || 'auto'}"/></w:pBdr>`);
+    else if (o.border) ppr.push(`<w:pBdr><w:bottom w:val="single" w:sz="${o.border}" w:space="6" w:color="${o.borderColor || 'auto'}"/></w:pBdr>`);
+    if (o.shade) ppr.push(`<w:shd w:val="clear" w:color="auto" w:fill="${o.shade}"/>`);
     const sp = [];
     if (o.before != null) sp.push(`w:before="${o.before}"`);
     if (o.after != null) sp.push(`w:after="${o.after}"`);
     if (o.line != null) { sp.push(`w:line="${o.line}"`); sp.push('w:lineRule="auto"'); }
     if (sp.length) ppr.push(`<w:spacing ${sp.join(' ')}/>`);
+    if (o.ind) ppr.push(`<w:ind w:left="${o.ind.left || 0}"${o.ind.hanging ? ` w:hanging="${o.ind.hanging}"` : ''}/>`);
     if (o.align) ppr.push(`<w:jc w:val="${o.align}"/>`);
-    if (o.border) ppr.push(`<w:pBdr><w:bottom w:val="single" w:sz="${o.border}" w:space="6" w:color="${o.borderColor || 'auto'}"/></w:pBdr>`);
     const p = ppr.length ? `<w:pPr>${ppr.join('')}</w:pPr>` : '';
     return `<w:p>${p}${runs}</w:p>`;
   }
-  // convert an inline-html fragment into runs, preserving bold + highlight
-  function htmlToRuns(html, base) {
+
+  // ---------- rich text → Word ----------
+  // inline html fragment → runs, preserving bold / italic / underline / strike /
+  // inline-code / highlight, and external hyperlinks (registered via ctx)
+  function runsFromHtml(html, base, ctx) {
     const div = document.createElement('div');
     div.innerHTML = html || '';
     const out = [];
-    (function walk(node, bold, mark) {
+    (function walk(node, st) {
       node.childNodes.forEach((ch) => {
         if (ch.nodeType === 3) {
-          if (ch.textContent) out.push(run(ch.textContent, Object.assign({}, base, { bold: bold || base.bold, shade: mark ? 'FCEFB4' : base.shade })));
+          if (ch.textContent) out.push(run(ch.textContent, Object.assign({}, base, {
+            bold: st.bold || base.bold, italic: st.italic, under: st.under, strike: st.strike, mono: st.code,
+            shade: st.mark ? 'FCEFB4' : (st.code ? 'F1EFEA' : base.shade),
+            color: st.link ? '2F5BD0' : (st.code ? '8A3B2F' : base.color),
+          })));
         } else if (ch.nodeType === 1) {
           const tag = ch.tagName.toLowerCase();
-          const isMark = tag === 'mark' || /background/i.test(ch.getAttribute('style') || '');
-          walk(ch, bold || tag === 'b' || tag === 'strong', mark || isMark);
+          const ns = Object.assign({}, st);
+          if (tag === 'b' || tag === 'strong') ns.bold = true;
+          if (tag === 'i' || tag === 'em') ns.italic = true;
+          if (tag === 'u') ns.under = true;
+          if (tag === 's' || tag === 'strike' || tag === 'del') ns.strike = true;
+          if (tag === 'code') ns.code = true;
+          if (tag === 'mark' || /background/i.test(ch.getAttribute('style') || '')) ns.mark = true;
+          if (tag === 'br') { out.push('<w:r><w:br/></w:r>'); return; }
+          if (tag === 'a' && ctx && ch.getAttribute('href')) {
+            const rId = ctx.addHyperlink(ch.getAttribute('href'));
+            const at = out.length;
+            ns.link = true; ns.under = true;
+            walk(ch, ns);
+            const inner = out.splice(at).join('');
+            out.push(`<w:hyperlink r:id="${rId}">${inner}</w:hyperlink>`);
+            return;
+          }
+          walk(ch, ns);
         }
       });
-    })(div, false, false);
+    })(div, {});
     if (!out.length) out.push(run('', base));
     return out.join('');
+  }
+
+  // <ul>/<ol> → one Word paragraph per <li> with a bullet/number + hanging indent
+  function listParas(listEl, ordered, base, ctx, level) {
+    let out = '', n = 1;
+    [...listEl.children].forEach((li) => {
+      if (li.tagName.toLowerCase() !== 'li') return;
+      const nested = [];
+      const inlineFrag = document.createElement('span');
+      [...li.childNodes].forEach((ch) => {
+        const t = ch.nodeType === 1 ? ch.tagName.toLowerCase() : '';
+        if (t === 'ul' || t === 'ol') nested.push(ch); else inlineFrag.appendChild(ch.cloneNode(true));
+      });
+      const marker = ordered ? n + '.' : '•';
+      const runs = run(marker + '  ', { color: base.color, size: base.size }) + runsFromHtml(inlineFrag.innerHTML, base, ctx);
+      out += para(runs, { after: 40, line: base.line, ind: { left: 360 * (level + 1) + 360, hanging: 360 } });
+      n++;
+      nested.forEach((nl) => { out += listParas(nl, nl.tagName.toLowerCase() === 'ol', base, ctx, level + 1); });
+    });
+    return out;
+  }
+  function quotePara(el, base, ctx) {
+    const runs = runsFromHtml(el.innerHTML, Object.assign({}, base, { italic: true, color: '6F6A61' }), ctx);
+    return para(runs, { before: 120, after: 120, line: base.line, ind: { left: 360 }, leftBorder: 18, leftBorderColor: 'C9C4BB' });
+  }
+  function codeBlockPara(el) {
+    const lines = (el.textContent || '').replace(/\n+$/, '').split('\n');
+    const runs = lines.map((ln, i) => run(ln || ' ', { mono: true, size: 19, color: '33302B' }) + (i < lines.length - 1 ? '<w:r><w:br/></w:r>' : '')).join('');
+    return para(runs, { before: 120, after: 120, ind: { left: 120 }, shade: 'F1EFEA' });
+  }
+  // generic Word table from rows of cell-run strings
+  function wTable(rows, opts) {
+    opts = opts || {};
+    const cols = Math.max(1, ...rows.map((r) => r.length));
+    const cw = Math.floor(9360 / cols);
+    const grid = `<w:tblGrid>${Array(cols).fill(`<w:gridCol w:w="${cw}"/>`).join('')}</w:tblGrid>`;
+    const borders = `<w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map((s) => `<w:${s} w:val="single" w:sz="4" w:space="0" w:color="D8D3C8"/>`).join('')}</w:tblBorders>`;
+    const tblPr = `<w:tblPr><w:tblW w:w="9360" w:type="dxa"/>${borders}<w:tblCellMar><w:top w:w="60" w:type="dxa"/><w:left w:w="100" w:type="dxa"/><w:bottom w:w="60" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar><w:tblLook w:firstRow="1"/></w:tblPr>`;
+    const trs = rows.map((cells, ri) => {
+      const head = opts.header && ri === 0;
+      const tcs = cells.map((cellRuns) => `<w:tc><w:tcPr><w:tcW w:w="${cw}" w:type="dxa"/>${head ? '<w:shd w:val="clear" w:color="auto" w:fill="2B2925"/>' : ''}<w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:before="20" w:after="20"/></w:pPr>${cellRuns}</w:p></w:tc>`).join('');
+      return `<w:tr>${head ? '<w:trPr><w:tblHeader/></w:trPr>' : ''}${tcs}</w:tr>`;
+    }).join('');
+    return `<w:tbl>${tblPr}${grid}${trs}</w:tbl>`;
+  }
+  function wTableFromHtml(tableEl, base, ctx) {
+    const rows = [...tableEl.querySelectorAll('tr')].map((tr) =>
+      [...tr.children].map((cell) => runsFromHtml(cell.innerHTML, Object.assign({}, base, { bold: cell.tagName.toLowerCase() === 'th' }), ctx)));
+    if (!rows.length) return '';
+    const headed = tableEl.querySelector('th') != null;
+    return wTable(rows, { header: headed }) + '<w:p/>';
+  }
+  // a whole text block → block-level Word XML (paragraphs, lists, quotes, code, tables)
+  function emitTextBlock(b, ctx) {
+    const base = b.tag === 'h1' ? { bold: true, size: 52, color: '211F1C', line: 240, after: 160 }
+      : b.tag === 'h2' ? { bold: true, size: 29, color: '211F1C', before: 360, after: 120, line: 280 }
+        : { size: 22, color: '33302B', after: 160, line: 300 };
+    const div = document.createElement('div');
+    div.innerHTML = b.html || '';
+    let out = '';
+    let inlineBuf = [];
+    const flush = () => {
+      if (!inlineBuf.length) return;
+      const span = document.createElement('span');
+      inlineBuf.forEach((n) => span.appendChild(n.cloneNode(true)));
+      inlineBuf = [];
+      if (!(span.textContent || '').trim()) return;
+      out += para(runsFromHtml(span.innerHTML, base, ctx), { before: base.before, after: base.after, line: base.line });
+    };
+    [...div.childNodes].forEach((ch) => {
+      const tag = ch.nodeType === 1 ? ch.tagName.toLowerCase() : '';
+      if (tag === 'ul' || tag === 'ol') { flush(); out += listParas(ch, tag === 'ol', { size: base.size, color: base.color, line: base.line }, ctx, 0); }
+      else if (tag === 'blockquote') { flush(); out += quotePara(ch, base, ctx); }
+      else if (tag === 'pre') { flush(); out += codeBlockPara(ch); }
+      else if (tag === 'table') { flush(); out += wTableFromHtml(ch, { size: base.size, color: base.color }, ctx); }
+      else if (tag === 'div' || tag === 'p') { flush(); if ((ch.textContent || '').trim()) out += para(runsFromHtml(ch.innerHTML, base, ctx), { after: base.after, line: base.line }); }
+      else inlineBuf.push(ch);
+    });
+    flush();
+    return out;
   }
   function imgPara(rId, id, wEmu, hEmu, name) {
     return `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="240" w:after="40"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${wEmu}" cy="${hEmu}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="${id}" name="${esc(name)}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${esc(name)}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${wEmu}" cy="${hEmu}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
@@ -113,9 +223,11 @@
     const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     const hasH1 = blocks.some((b) => b.kind === 'text' && b.tag === 'h1');
     const media = []; // { name, u8 }
-    const rels = [];  // { id, target }
+    const rels = [];  // { id, target, type }
     let body = '';
-    let figN = 0, picId = 1;
+    let figN = 0, picId = 1, hlId = 1;
+    const ctx = { addHyperlink(url) { const id = 'rIdH' + (hlId++); rels.push({ id, target: url, type: 'hyperlink' }); return id; } };
+    const TABULAR = { table: 1, rowtable: 1 };
 
     // cover
     body += para(run('DOCUMENT', { bold: true, color: accent, size: 18, caps: true, ls: 40 }), { after: 60 });
@@ -126,9 +238,22 @@
     for (const b of blocks) {
       if (b.kind === 'text') {
         if (!textOf(b.html)) continue; // skip empty paragraphs — no blank lines in the export
-        if (b.tag === 'h1') body += para(htmlToRuns(b.html, { bold: true, size: 52, color: '211F1C' }), { after: 160, line: 240 });
-        else if (b.tag === 'h2') body += para(htmlToRuns(b.html, { bold: true, size: 29, color: '211F1C' }), { before: 360, after: 120 });
-        else body += para(htmlToRuns(b.html, { size: 22, color: '33302B' }), { after: 160, line: 300 });
+        body += emitTextBlock(b, ctx);
+      } else if (TABULAR[b.visual.type]) {
+        // tabular diagrams (table / rowtable) export as a real, editable Word table
+        const sp = b.visual.spec || {}; const its = sp.items || [];
+        const hasVal = its.some((it) => it.value);
+        const header = hasVal ? ['Item', 'Description', 'Value'] : ['Item', 'Description'];
+        const rows = [header.map((h) => run(h, { bold: true, color: 'FFFFFF', size: 19 }))];
+        its.forEach((it) => {
+          const cells = [run(it.label || '', { bold: true, size: 20, color: '211F1C' }), run(it.detail || '', { size: 20, color: '33302B' })];
+          if (hasVal) cells.push(run(it.value || '', { bold: true, size: 20, color: accent }));
+          rows.push(cells);
+        });
+        figN++;
+        body += para(run('Table ' + figN, { bold: true, color: accent, size: 18 }) + run('  —  ' + (sp.title || ''), { color: '6F6A61', size: 18 }), { align: 'center', before: 240, after: 60 });
+        body += wTable(rows, { header: true });
+        body += para('', { after: 200 });
       } else {
         const svg = document.querySelector(`figure[data-block-id="${b.id}"] .dg-wrap svg`);
         if (!svg) continue;
@@ -139,7 +264,7 @@
           const name = 'image' + picId + '.png';
           media.push({ name, u8: dataUrlToU8(png.url) });
           const rId = 'rId' + (100 + picId);
-          rels.push({ id: rId, target: 'media/' + name });
+          rels.push({ id: rId, target: 'media/' + name, type: 'image' });
           body += imgPara(rId, picId, wEmu, hEmu, name);
           figN++;
           body += para(run('Figure ' + figN, { bold: true, color: accent, size: 18 }) + run('  —  ' + (b.visual.spec.title || ''), { color: '6F6A61', size: 18 }), { align: 'center', after: 280 });
@@ -162,7 +287,9 @@
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`;
 
     const docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${rels.map((r) => `<Relationship Id="${r.id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${r.target}"/>`).join('')}</Relationships>`;
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${rels.map((r) => r.type === 'hyperlink'
+      ? `<Relationship Id="${r.id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${esc(r.target)}" TargetMode="External"/>`
+      : `<Relationship Id="${r.id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${r.target}"/>`).join('')}</Relationships>`;
 
     const zip = new JSZip();
     zip.file('[Content_Types].xml', contentTypes);
@@ -190,12 +317,22 @@ ${hasH1 ? '' : `<h1 style="margin:0 0 10pt">${esc(docTitle)}</h1>`}
 <p style="font-size:10pt;color:#6f6a61;margin:0">${today} &nbsp;·&nbsp; Made with Markwise</p>
 <p style="border-bottom:2.25pt solid ${accent};margin:14pt 0 0;font-size:1pt">&nbsp;</p>
 </div>`;
+    const TABULAR = { table: 1, rowtable: 1 };
     for (const b of blocks) {
       if (b.kind === 'text') {
         if (!textOf(b.html)) continue; // skip empty paragraphs
+        // a <div> (not <p>) so lists / blockquotes / code blocks render natively in Word
         if (b.tag === 'h1') body += `<h1 style="margin:0 0 10pt">${b.html}</h1>`;
         else if (b.tag === 'h2') body += `<h2>${b.html}</h2>`;
-        else body += `<p>${b.html}</p>`;
+        else body += `<div class="mwp">${b.html}</div>`;
+      } else if (TABULAR[b.visual.type]) {
+        const sp = b.visual.spec || {}; const its = sp.items || [];
+        const hasVal = its.some((it) => it.value);
+        figN++;
+        const head = hasVal ? '<th>Item</th><th>Description</th><th>Value</th>' : '<th>Item</th><th>Description</th>';
+        const rows = its.map((it) => `<tr><td><b>${esc(it.label || '')}</b></td><td>${esc(it.detail || '')}</td>${hasVal ? `<td style="color:${accent};font-weight:bold">${esc(it.value || '')}</td>` : ''}</tr>`).join('');
+        body += `<p style="text-align:center;font-size:9pt;color:#6f6a61;margin:14pt 0 4pt"><b style="color:${accent}">Table ${figN}</b> &nbsp;—&nbsp; ${esc(sp.title || '')}</p>
+<table class="mwtbl"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
       } else {
         const svg = document.querySelector(`figure[data-block-id="${b.id}"] .dg-wrap svg`);
         if (svg) {
@@ -218,6 +355,16 @@ ${hasH1 ? '' : `<h1 style="margin:0 0 10pt">${esc(docTitle)}</h1>`}
   h1 { font-size: 26pt; letter-spacing: -0.5pt; line-height: 1.15; color: #211f1c; }
   h2 { font-size: 14.5pt; margin: 24pt 0 8pt; color: #211f1c; border-bottom: 1pt solid #e4e1da; padding-bottom: 4pt; }
   p { font-size: 11pt; margin: 0 0 10pt; }
+  .mwp { font-size: 11pt; margin: 0 0 10pt; }
+  ul, ol { font-size: 11pt; margin: 0 0 10pt; padding-left: 26pt; }
+  li { margin: 0 0 4pt; }
+  blockquote { margin: 8pt 0; padding: 2pt 0 2pt 12pt; border-left: 3pt solid #c9c4bb; color: #6f6a61; font-style: italic; }
+  pre { font-family: Consolas, 'Courier New', monospace; font-size: 9.5pt; background: #f1efea; padding: 8pt 10pt; white-space: pre-wrap; margin: 8pt 0; }
+  code { font-family: Consolas, 'Courier New', monospace; font-size: 9.5pt; background: #f1efea; color: #8a3b2f; padding: 0 2pt; }
+  a { color: #2f5bd0; }
+  table.mwtbl { border-collapse: collapse; width: 100%; font-size: 10.5pt; margin: 0 0 14pt; }
+  table.mwtbl th { background: #2b2925; color: #fff; text-align: left; padding: 5pt 8pt; font-size: 9.5pt; }
+  table.mwtbl td { border: 0.75pt solid #d8d3c8; padding: 5pt 8pt; vertical-align: top; }
   mark, span[style*="background"] { background: #fcefb4; }
 </style></head>
 <body><div class="Section1">${body}</div></body></html>`;
