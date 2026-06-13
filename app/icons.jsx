@@ -57,21 +57,17 @@
     return 'spark';
   }
 
-  // ---- Lucide icon pack (loaded via CDN as window.lucide) ----
-  // Lucide icons are the same 24×24 stroke format. We normalise its registry to
-  // a key → IconNode map (IconNode = [[tag, geometryAttrs], …]) so AI- or
-  // user-chosen icon names ("shield-check") resolve regardless of casing/dashes.
+  // ---- Lucide icon pack (vendored locally as window.LUCIDE_ICONS — no CDN) ----
+  // window.LUCIDE_ICONS maps a kebab name → the icon's child SVG nodes
+  // [[tag, geometryAttrs], …]. We build a dash-insensitive lookup so AI- or
+  // user-chosen names ("shield-check" / "shieldcheck") both resolve.
   let _lreg = null;
   function lucideRegistry() {
     if (_lreg !== null) return _lreg;
-    const L = window.lucide;
-    const src = L && (L.icons || L);
+    const src = window.LUCIDE_ICONS;
     if (!src || typeof src !== 'object') { _lreg = false; return false; }
     const reg = {};
-    for (const k in src) {
-      const v = src[k];
-      if (Array.isArray(v)) reg[k.toLowerCase().replace(/[-_\s]/g, '')] = v;
-    }
+    for (const k in src) if (Array.isArray(src[k])) reg[k.replace(/[-_\s]/g, '')] = src[k];
     _lreg = Object.keys(reg).length ? reg : false;
     return _lreg;
   }
@@ -81,28 +77,21 @@
     return reg[String(name || '').toLowerCase().replace(/[-_\s]/g, '')] || null;
   }
   function isIconName(s) { return typeof s === 'string' && /^[a-z][a-z0-9-]*$/i.test(s) && s.length <= 40; }
-  // the full set of names a picker can search/offer
   function lucideNames() {
-    const reg = lucideRegistry();
-    const L = window.lucide;
-    const src = (reg && (L.icons || L)) || {};
-    return Object.keys(src)
-      .filter((k) => Array.isArray(src[k]))
-      .map((k) => k.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase());
+    const src = window.LUCIDE_ICONS;
+    return src ? Object.keys(src) : [];
   }
 
   // Draw an icon centred at (x,y), sized to `size`. nameOrText may be:
   //  • an explicit built-in name (gear, rocket…)  • an explicit Lucide name
-  //  • free text → keyword-matched to a built-in icon (offline-safe fallback)
+  //  • free text → keyword-matched to a built-in icon (always-available fallback)
   function draw(x, y, size, nameOrText, color, sw) {
     const tf = `translate(${(x - size / 2).toFixed(1)} ${(y - size / 2).toFixed(1)}) scale(${(size / 24).toFixed(3)})`;
     if (P[nameOrText]) {
       return <g transform={tf}><path d={P[nameOrText]} fill="none" stroke={color} strokeWidth={sw || 1.9} strokeLinecap="round" strokeLinejoin="round" /></g>;
     }
     if (isIconName(nameOrText)) {
-      // a Lucide icon is ["svg", svgAttrs, [ [tag, geomAttrs], … ]] — render the children
-      const node = lucideNodes(nameOrText);
-      const kids = node && node[2];
+      const kids = lucideNodes(nameOrText);
       if (Array.isArray(kids) && kids.length) {
         return (
           <g transform={tf} fill="none" stroke={color} strokeWidth={sw || 1.9} strokeLinecap="round" strokeLinejoin="round">
