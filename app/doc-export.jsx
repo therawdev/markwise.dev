@@ -130,7 +130,7 @@
         else if (b.tag === 'h2') body += para(htmlToRuns(b.html, { bold: true, size: 29, color: '211F1C' }), { before: 360, after: 120 });
         else body += para(htmlToRuns(b.html, { size: 22, color: '33302B' }), { after: 160, line: 300 });
       } else {
-        const svg = document.querySelector(`figure[data-block-id="${b.id}"] svg`);
+        const svg = document.querySelector(`figure[data-block-id="${b.id}"] .dg-wrap svg`);
         if (!svg) continue;
         try {
           const png = await svgToPng(svg, 2);
@@ -197,7 +197,7 @@ ${hasH1 ? '' : `<h1 style="margin:0 0 10pt">${esc(docTitle)}</h1>`}
         else if (b.tag === 'h2') body += `<h2>${b.html}</h2>`;
         else body += `<p>${b.html}</p>`;
       } else {
-        const svg = document.querySelector(`figure[data-block-id="${b.id}"] svg`);
+        const svg = document.querySelector(`figure[data-block-id="${b.id}"] .dg-wrap svg`);
         if (svg) {
           try {
             const png = await svgToPng(svg, 2);
