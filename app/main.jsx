@@ -491,7 +491,22 @@
     })();
 
     function patchVisual(id, patch) {
-      setBlocks((bs) => bs.map((b) => (b.kind === 'visual' && b.visual.id === id ? { ...b, visual: { ...b.visual, ...patch } } : b)));
+      // Changing the layout/variant (or diagram type) re-flows the whole arrangement, so the
+      // manual drag/scale overrides in visual.layout — keyed to the OLD positions — no longer
+      // make sense and would jumble the new layout. Drop them on a structural change.
+      // Content edits (spec text) and direct drag patches keep their positions untouched.
+      setBlocks((bs) => bs.map((b) => {
+        if (!(b.kind === 'visual' && b.visual.id === id)) return b;
+        const structural = ('type' in patch && patch.type !== b.visual.type)
+          || ('variant' in patch && patch.variant !== b.visual.variant);
+        // Keep the canvas board position (layout.canvas) — only the arrangement-specific
+        // drag/scale overrides are stale after a re-flow.
+        const cv = b.visual.layout && b.visual.layout.canvas;
+        const next = (structural && !('layout' in patch))
+          ? { ...patch, layout: cv ? { canvas: cv } : {} }
+          : patch;
+        return { ...b, visual: { ...b.visual, ...next } };
+      }));
     }
     const addTextAfter = useCallback((id) => {
       setBlocks((bs) => {
