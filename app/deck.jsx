@@ -92,7 +92,26 @@
   }
 
   // ---------- single slide, rendered at 1280×720 then scaled ----------
-  function Slide({ slide, theme, w, flip, pageNo, total, docTitle, layout }) {
+  // click-to-edit text used on the deck stage. Uncontrolled (sets text via ref) so
+  // typing isn't fought by React; commits on blur / Enter (single-line).
+  function EditableText({ value, onCommit, style, className, tag, multiline }) {
+    const ref = useRef(null);
+    useEffect(() => { if (ref.current && ref.current.textContent !== (value || '')) ref.current.textContent = value || ''; }, [value]);
+    return React.createElement(tag || 'div', {
+      ref, className: 'deck-edit ' + (className || ''), style,
+      contentEditable: true, suppressContentEditableWarning: true, spellCheck: false,
+      'data-ph': 'Type…',
+      onBlur: (e) => { const t = e.currentTarget.textContent; if (t !== (value || '')) onCommit(t); },
+      onKeyDown: (e) => {
+        e.stopPropagation(); // don't let arrows/space drive the deck
+        if (!multiline && e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); }
+        if (e.key === 'Escape') { e.currentTarget.textContent = value || ''; e.currentTarget.blur(); }
+      },
+      onClick: (e) => e.stopPropagation(),
+    });
+  }
+
+  function Slide({ slide, theme, w, flip, pageNo, total, docTitle, layout, editable, onEdit }) {
     const v = themeVars(theme);
     const s = w / 1280;
     const isTitle = slide.kind === 'title' || slide.kind === 'thanks';
@@ -117,24 +136,42 @@
             <window.GlyphDeckLayouts.LayoutSlide slide={slide} v={v} conf={L.conf} flip={flip} pageNo={pageNo} total={total} docTitle={docTitle} />
           ) : isTitle ? (
             <div style={{ position: 'absolute', left: 90, right: 110, top: 236 }}>
-              <div style={{ fontSize: 66, fontWeight: 700, lineHeight: 1.1, letterSpacing: '-1px', borderLeft: v.look === 'bold' ? '14px solid rgba(255,255,255,0.6)' : 'none', paddingLeft: v.look === 'bold' ? 28 : 0 }}>{slide.title}</div>
+              {(() => {
+                const tStyle = { fontSize: 66, fontWeight: 700, lineHeight: 1.1, letterSpacing: '-1px', borderLeft: v.look === 'bold' ? '14px solid rgba(255,255,255,0.6)' : 'none', paddingLeft: v.look === 'bold' ? 28 : 0 };
+                return editable ? <EditableText value={slide.title} onCommit={(t) => onEdit({ title: t })} style={tStyle} /> : <div style={tStyle}>{slide.title}</div>;
+              })()}
               {v.look === 'editorial' ? <div style={{ width: 110, height: 2, background: accent, margin: '28px 0' }}></div> : null}
-              {slide.sub ? <div style={{ fontSize: 24, lineHeight: 1.5, color: sub, marginTop: 26, maxWidth: 880, fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>{slide.sub.length > 300 ? slide.sub.slice(0, 297) + '…' : slide.sub}</div> : null}
+              {(() => {
+                const sStyle = { fontSize: 24, lineHeight: 1.5, color: sub, marginTop: 26, maxWidth: 880, fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" };
+                if (editable && slide.kind === 'title') return <EditableText multiline value={slide.sub || ''} onCommit={(t) => onEdit({ sub: t })} style={sStyle} />;
+                return slide.sub ? <div style={sStyle}>{slide.sub.length > 300 ? slide.sub.slice(0, 297) + '…' : slide.sub}</div> : null;
+              })()}
             </div>
           ) : (
             <div style={{ position: 'absolute', inset: '52px 80px 56px' }}>
-              <div style={{ fontSize: 40, fontWeight: 700, letterSpacing: '-0.5px', marginBottom: 8, paddingLeft: v.look === 'bold' ? 24 : v.look === 'minimal' || v.look === 'dark' ? 0 : 0, borderLeft: v.look === 'bold' ? `12px solid ${v.accent}` : 'none', marginTop: v.look === 'minimal' || v.look === 'dark' ? 22 : 0 }}>{slide.title}</div>
+              {(() => {
+                const tStyle = { fontSize: 40, fontWeight: 700, letterSpacing: '-0.5px', marginBottom: 8, paddingLeft: v.look === 'bold' ? 24 : v.look === 'minimal' || v.look === 'dark' ? 0 : 0, borderLeft: v.look === 'bold' ? `12px solid ${v.accent}` : 'none', marginTop: v.look === 'minimal' || v.look === 'dark' ? 22 : 0 };
+                return editable && slide.kind !== 'agenda' ? <EditableText value={slide.title} onCommit={(t) => onEdit({ title: t })} style={tStyle} /> : <div style={tStyle}>{slide.title}</div>;
+              })()}
               {v.look === 'editorial' ? <div style={{ width: 88, height: 2, background: accent, margin: '10px 0 4px' }}></div> : null}
               <div style={{ display: 'flex', gap: 44, marginTop: 26, height: 500 }}>
                 {cols.map((kind) =>
                   kind === 'text' ? (
                     <div key="text" style={{ flex: split ? '0 0 38%' : 1, display: 'flex', flexDirection: 'column', gap: 22, justifyContent: 'center' }}>
-                      {paras.map((p, i) => (
-                        <div key={i} style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-                          <span style={{ flex: '0 0 10px', width: 10, height: 10, borderRadius: v.look === 'bold' ? 0 : '50%', background: v.accent, marginTop: 11 }}></span>
-                          <span style={{ fontSize: slide.visual ? 19 : 23, lineHeight: 1.55, color: v.fg === '#211f1c' ? '#3a362f' : v.fg, fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>{p.length > 300 ? p.slice(0, 297) + '…' : p}</span>
-                        </div>
-                      ))}
+                      {(editable && slide.kind !== 'agenda' ? (slide.paras || []) : paras).map((p, i) => {
+                        const tStyle = { fontSize: slide.visual ? 19 : 23, lineHeight: 1.55, color: v.fg === '#211f1c' ? '#3a362f' : v.fg, fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", flex: 1 };
+                        return (
+                          <div key={i} style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+                            <span style={{ flex: '0 0 10px', width: 10, height: 10, borderRadius: v.look === 'bold' ? 0 : '50%', background: v.accent, marginTop: 11 }}></span>
+                            {editable && slide.kind !== 'agenda'
+                              ? <EditableText value={p} style={tStyle} onCommit={(t) => { const np = (slide.paras || []).slice(); if (t.trim()) np[i] = t; else np.splice(i, 1); onEdit({ paras: np }); }} />
+                              : <span style={tStyle}>{p.length > 300 ? p.slice(0, 297) + '…' : p}</span>}
+                          </div>
+                        );
+                      })}
+                      {editable && slide.kind === 'content' ? (
+                        <button className="deck-add-bullet" onClick={(e) => { e.stopPropagation(); onEdit({ paras: [...(slide.paras || []), 'New point' ] }); }}>+ bullet</button>
+                      ) : null}
                     </div>
                   ) : (
                     <div key="vis" className="slide-vis" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 0 }}>
@@ -260,36 +297,47 @@
     const [applyAll, setApplyAll] = useState(false);
     const [busy, setBusy] = useState(false);
     const [printing, setPrinting] = useState(false);
+    const [dragIdx, setDragIdx] = useState(null);
+    const [overIdx, setOverIdx] = useState(null);
+    const [themeForSlide, setThemeForSlide] = useState(false); // theme picker scope: this slide only
     const [stageW, setStageW] = useState(820);
     const stageRef = useRef(null);
     const railRef = useRef(null);
     const theme = THEMES.find((t) => t.id === themeId) || THEMES[0];
 
-    const ordered = order && order.length === baseSlides.length ? order : baseSlides.map((_, i) => i);
+    // user-added slides (not from the document). Refs are strings ('x1'); base
+    // slides are numeric indices. order holds refs of either kind.
+    const [extras, setExtras] = useState([]);
+    const xCounter = useRef(1);
+    const srcOf = (ref) => (typeof ref === 'number' ? baseSlides[ref] : extras.find((e) => e.id === ref));
+    const defaultRefs = baseSlides.map((_, i) => i).concat(extras.map((e) => e.id));
+    const ordered = order || defaultRefs;
     // the agenda lists the content slides in their current order, with title edits applied
     const agendaParas = ordered
-      .map((oi) => ({ oi, b: baseSlides[oi] }))
-      .filter((x) => x.b.kind === 'content')
-      .map((x, n) => (n + 1) + '.  ' + ((edited[x.oi] || {}).title != null ? edited[x.oi].title : x.b.title));
-    const slides = ordered.map((oi, si) => {
-      const base = baseSlides[oi];
-      const d = aiOn && distilled[oi] && distilled[oi].key === slideKey(base) ? distilled[oi] : {};
-      const e = edited[oi] || {};
+      .map((ref) => ({ ref, b: srcOf(ref) }))
+      .filter((x) => x.b && x.b.kind === 'content')
+      .map((x, n) => (n + 1) + '.  ' + ((edited[x.ref] || {}).title != null ? edited[x.ref].title : x.b.title));
+    const slides = ordered.map((ref, si) => {
+      const base = srcOf(ref) || { kind: 'content', title: '', paras: [], sub: null, visual: null };
+      const d = aiOn && distilled[ref] && distilled[ref].key === slideKey(base) ? distilled[ref] : {};
+      const e = edited[ref] || {};
+      const o = ov[ref] || {};
       return {
         ...base,
         title: e.title != null ? e.title : base.title,
         paras: base.kind === 'agenda' ? agendaParas : (e.paras || d.paras || base.paras),
         sub: e.sub != null ? e.sub : (d.sub || base.sub),
-        _oi: oi, _si: si, _skip: !!(ov[oi] || {}).skip, _flip: !!(ov[oi] || {}).flip, _layout: (ov[oi] || {}).layout || null,
+        _oi: ref, _si: si, _skip: !!o.skip, _flip: !!o.flip, _layout: o.layout || null, _theme: o.theme || null,
       };
     });
+    const themeOf = (sl) => (sl._theme && THEMES.find((t) => t.id === sl._theme)) || theme;
     const live = slides.filter((s) => !s._skip);
     const pageOf = {};
     live.forEach((s, k) => { pageOf[s._si] = k + 1; });
     const cur = Math.min(idx, slides.length - 1);
     const curSlide = slides[cur];
 
-    useEffect(() => { setOrder(null); setOv({}); setDistilled({}); setEdited({}); setRemarks({}); setRevIdx(0); }, [baseSlides.length]);
+    useEffect(() => { setOrder(null); setOv({}); setDistilled({}); setEdited({}); setRemarks({}); setRevIdx(0); setExtras([]); }, [baseSlides.length]);
     useEffect(() => { localStorage.setItem('glyph-deck-theme', themeId); }, [themeId]);
     useEffect(() => { localStorage.setItem('glyph-deck-ai', aiOn ? '1' : '0'); }, [aiOn]);
 
@@ -330,6 +378,31 @@
       setOrder(o);
       setIdx(j);
     };
+    const dropReorder = (from, to) => {
+      if (from === to || to == null) return;
+      const o = [...ordered];
+      const [m] = o.splice(from, 1);
+      o.splice(to > from ? to - 1 : to, 0, m);
+      setOrder(o);
+      setIdx(o.indexOf(m));
+    };
+    const addSlide = (afterSi) => {
+      const id = 'x' + (xCounter.current++);
+      setExtras((prev) => [...prev, { id, kind: 'content', title: 'New slide', paras: ['New point'], sub: null, visual: null }]);
+      const o = [...ordered];
+      o.splice(afterSi + 1, 0, id);
+      setOrder(o);
+      setIdx(afterSi + 1);
+    };
+    const deleteSlide = (si) => {
+      const ref = ordered[si];
+      const o = [...ordered];
+      o.splice(si, 1);
+      setOrder(o);
+      if (typeof ref === 'string') setExtras((prev) => prev.filter((e) => e.id !== ref));
+      setIdx((i) => Math.max(0, Math.min(i, o.length - 1)));
+    };
+    const setSlideTheme = (oi, id) => setOv((prev) => ({ ...prev, [oi]: { ...(prev[oi] || {}), theme: id } }));
     const toggleOv = (oi, key) => setOv((prev) => ({ ...prev, [oi]: { ...(prev[oi] || {}), [key]: !(prev[oi] || {})[key] } }));
 
     // ----- build flow: review state -----
@@ -338,7 +411,7 @@
     const patchEdit = (oi, patch) => setEdited((prev) => ({ ...prev, [oi]: { ...(prev[oi] || {}), ...patch } }));
     const regen = async (sl) => {
       if (!window.GlyphAI || regenOi != null) return;
-      const base = baseSlides[sl._oi];
+      const base = srcOf(sl._oi);
       const note = (remarks[sl._oi] || '').trim();
       setRegenOi(sl._oi);
       try {
@@ -409,7 +482,7 @@
       };
       return (
         <div className="present-root" onClick={() => step(1)}>
-          <Slide slide={shown} theme={theme} w={pw} flip={shown._flip} layout={shown._layout} pageNo={pageOf[shown._si]} total={live.length} docTitle={docTitle} />
+          <Slide slide={shown} theme={themeOf(shown)} w={pw} flip={shown._flip} layout={shown._layout} pageNo={pageOf[shown._si]} total={live.length} docTitle={docTitle} />
           <div className="present-count">{liveIdx + 1} / {live.length}</div>
           <button className="present-exit" onClick={(e) => { e.stopPropagation(); setPresent(false); }}>Esc · exit</button>
         </div>
@@ -443,19 +516,24 @@
         </div>
         {pickOpen ? (
           <div className="theme-pick">
+            <div className="theme-scope">
+              <label className="lay-all"><input type="checkbox" checked={themeForSlide} onChange={(e) => setThemeForSlide(e.target.checked)} /> This slide only (slide {cur + 1})</label>
+              {curSlide && curSlide._theme ? <button className="ghost-btn sm" onClick={() => setSlideTheme(curSlide._oi, null)}>↺ Use deck theme</button> : null}
+            </div>
             {LOOKS.map((l) => (
               <div key={l.id} className="theme-row">
                 <span className="theme-row-name">{l.name}</span>
                 <div className="theme-swatches">
                   {PALETTES.map((p, pi) => {
                     const id = p.name.toLowerCase() + '-' + l.id;
+                    const active = themeForSlide ? (curSlide && curSlide._theme === id) : themeId === id;
                     return (
                       <button
                         key={id}
-                        className={'tswatch' + (themeId === id ? ' on' : '')}
+                        className={'tswatch' + (active ? ' on' : '')}
                         title={p.name + ' ' + l.name}
                         style={{ background: l.id === 'dark' ? '#1b1916' : l.id === 'soft' ? p.soft : l.id === 'editorial' ? '#faf7f0' : '#fff' }}
-                        onClick={() => setThemeId(id)}
+                        onClick={() => { if (themeForSlide && curSlide) setSlideTheme(curSlide._oi, id); else setThemeId(id); }}
                       >
                         <span style={{ background: p.p, borderRadius: l.id === 'bold' ? 0 : 99 }}></span>
                       </button>
@@ -529,7 +607,7 @@
         ) : phase === 'review' && rev ? (
           <div className="deck-review">
             <div className="rev-stage" ref={stageRef}>
-              <Slide slide={rev} theme={theme} w={Math.min(stageW, 780)} flip={rev._flip} layout={rev._layout} docTitle={docTitle} />
+              <Slide slide={rev} theme={themeOf(rev)} w={Math.min(stageW, 780)} flip={rev._flip} layout={rev._layout} docTitle={docTitle} />
               {rev.visual ? <div className="rev-vis-note">⬡ This section's diagram is on the slide and exports with it</div> : null}
             </div>
             <div className="rev-form">
@@ -559,7 +637,7 @@
               <div className="rev-actions">
                 <button
                   className="ghost-btn sm"
-                  disabled={regenOi != null || (rev.kind === 'content' ? !(baseSlides[rev._oi].paras || []).length : !baseSlides[rev._oi].sub)}
+                  disabled={regenOi != null || (rev.kind === 'content' ? !((srcOf(rev._oi) || {}).paras || []).length : !(srcOf(rev._oi) || {}).sub)}
                   title="Rewrite this slide's text with AI, applying your remarks"
                   onClick={() => regen(rev)}
                 >{regenOi === rev._oi ? '✦ Regenerating…' : '✦ Regenerate'}</button>
@@ -577,8 +655,17 @@
         <div className="deck-main">
           <div className="deck-rail" ref={railRef}>
             {slides.map((sl, i) => (
-              <div key={i} className={'thumb' + (i === cur ? ' on' : '') + (sl._skip ? ' skipped' : '')} data-slide-idx={i} onClick={() => setIdx(i)} role="button" tabIndex={0}>
-                <Slide slide={sl} theme={theme} w={148} flip={sl._flip} layout={sl._layout} />
+              <div
+                key={i}
+                className={'thumb' + (i === cur ? ' on' : '') + (sl._skip ? ' skipped' : '') + (dragIdx === i ? ' dragging' : '') + (overIdx === i && dragIdx != null && dragIdx !== i ? ' drag-over' : '')}
+                data-slide-idx={i} onClick={() => setIdx(i)} role="button" tabIndex={0}
+                draggable
+                onDragStart={(e) => { setDragIdx(i); e.dataTransfer.effectAllowed = 'move'; }}
+                onDragOver={(e) => { e.preventDefault(); if (overIdx !== i) setOverIdx(i); }}
+                onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+                onDrop={(e) => { e.preventDefault(); dropReorder(dragIdx, i); setDragIdx(null); setOverIdx(null); }}
+              >
+                <Slide slide={sl} theme={themeOf(sl)} w={148} flip={sl._flip} layout={sl._layout} />
                 <span className="thumb-n">{sl._skip ? '—' : pageOf[i] != null ? pageOf[i] : i + 1}</span>
                 <span className="thumb-tools" onClick={(e) => e.stopPropagation()}>
                   <button title="Move up" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
@@ -587,13 +674,17 @@
                     <button title="Flip layout (swap text/visual sides)" onClick={() => toggleOv(sl._oi, 'flip')}>⇄</button>
                   ) : null}
                   <button title={sl._skip ? 'Include slide' : 'Skip slide'} onClick={() => toggleOv(sl._oi, 'skip')}>{sl._skip ? '◌' : '⊘'}</button>
+                  <button className="del" title="Delete slide" disabled={slides.length <= 1} onClick={() => deleteSlide(i)}>✕</button>
                 </span>
               </div>
             ))}
+            <button className="deck-add-slide" onClick={() => addSlide(cur)}>＋ Add slide</button>
           </div>
           <div className="deck-stage" ref={stageRef}>
             <div style={{ position: 'relative' }}>
-              <Slide slide={curSlide} theme={theme} w={stageW} flip={curSlide._flip} layout={curSlide._layout} pageNo={pageOf[cur]} total={live.length} docTitle={docTitle} />
+              <Slide slide={curSlide} theme={themeOf(curSlide)} w={stageW} flip={curSlide._flip} layout={curSlide._layout} pageNo={pageOf[cur]} total={live.length} docTitle={docTitle}
+                editable={!curSlide._layout} onEdit={(patch) => patchEdit(curSlide._oi, patch)} />
+              {!curSlide._layout ? <div className="deck-edit-hint">Click any text to edit it</div> : null}
               {curSlide._skip ? <div className="skip-badge">Skipped — excluded from Present &amp; exports</div> : null}
             </div>
             <div className="deck-nav">
@@ -608,7 +699,7 @@
           <div className="deck-print">
             {live.map((sl, k) => (
               <div key={k} className="print-page">
-                <Slide slide={sl} theme={theme} w={1280} flip={sl._flip} layout={sl._layout} pageNo={k + 1} total={live.length} docTitle={docTitle} />
+                <Slide slide={sl} theme={themeOf(sl)} w={1280} flip={sl._flip} layout={sl._layout} pageNo={k + 1} total={live.length} docTitle={docTitle} />
               </div>
             ))}
           </div>
