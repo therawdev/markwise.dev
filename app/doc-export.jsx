@@ -162,27 +162,41 @@
     const runs = lines.map((ln, i) => run(ln || ' ', { mono: true, size: 19, color: '33302B' }) + (i < lines.length - 1 ? '<w:r><w:br/></w:r>' : '')).join('');
     return para(runs, { before: 120, after: 120, ind: { left: 120 }, shade: 'F1EFEA' });
   }
-  // generic Word table from rows of cell-run strings
-  function wTable(rows, opts) {
-    opts = opts || {};
-    const cols = Math.max(1, ...rows.map((r) => r.length));
+  // styled Word table from rows of { cells:[runStr], head:bool }. Header rows get
+  // a dark fill (text must already be white); zebra striping on body rows.
+  function wTable(rows) {
+    const cols = Math.max(1, ...rows.map((r) => r.cells.length));
     const cw = Math.floor(9360 / cols);
     const grid = `<w:tblGrid>${Array(cols).fill(`<w:gridCol w:w="${cw}"/>`).join('')}</w:tblGrid>`;
     const borders = `<w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map((s) => `<w:${s} w:val="single" w:sz="4" w:space="0" w:color="D8D3C8"/>`).join('')}</w:tblBorders>`;
-    const tblPr = `<w:tblPr><w:tblW w:w="9360" w:type="dxa"/>${borders}<w:tblCellMar><w:top w:w="60" w:type="dxa"/><w:left w:w="100" w:type="dxa"/><w:bottom w:w="60" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar><w:tblLook w:firstRow="1"/></w:tblPr>`;
-    const trs = rows.map((cells, ri) => {
-      const head = opts.header && ri === 0;
-      const tcs = cells.map((cellRuns) => `<w:tc><w:tcPr><w:tcW w:w="${cw}" w:type="dxa"/>${head ? '<w:shd w:val="clear" w:color="auto" w:fill="2B2925"/>' : ''}<w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:before="20" w:after="20"/></w:pPr>${cellRuns}</w:p></w:tc>`).join('');
+    const tblPr = `<w:tblPr><w:tblW w:w="9360" w:type="dxa"/>${borders}<w:tblCellMar><w:top w:w="70" w:type="dxa"/><w:left w:w="110" w:type="dxa"/><w:bottom w:w="70" w:type="dxa"/><w:right w:w="110" w:type="dxa"/></w:tblCellMar><w:tblLook w:firstRow="1"/></w:tblPr>`;
+    let bodyN = 0;
+    const trs = rows.map((row) => {
+      const head = !!row.head;
+      const fill = head ? '2B2925' : (bodyN++ % 2 ? 'F7F5F1' : null);
+      const shd = fill ? `<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/>` : '';
+      const tcs = row.cells.map((cellRuns) => `<w:tc><w:tcPr><w:tcW w:w="${cw}" w:type="dxa"/>${shd}<w:vAlign w:val="center"/></w:tcPr><w:p><w:pPr><w:spacing w:before="20" w:after="20"/></w:pPr>${cellRuns}</w:p></w:tc>`).join('');
       return `<w:tr>${head ? '<w:trPr><w:tblHeader/></w:trPr>' : ''}${tcs}</w:tr>`;
     }).join('');
     return `<w:tbl>${tblPr}${grid}${trs}</w:tbl>`;
   }
-  function wTableFromHtml(tableEl, base, ctx) {
-    const rows = [...tableEl.querySelectorAll('tr')].map((tr) =>
-      [...tr.children].map((cell) => runsFromHtml(cell.innerHTML, Object.assign({}, base, { bold: cell.tagName.toLowerCase() === 'th' }), ctx)));
-    if (!rows.length) return '';
-    const headed = tableEl.querySelector('th') != null;
-    return wTable(rows, { header: headed }) + '<w:p/>';
+  // a content <table> (e.g. a pasted markdown table) → a styled Word table, reusing
+  // the table-diagram look: dark header w/ white text, bold first column, borders
+  function wTableFromHtml(tableEl, base, ctx, accent) {
+    const trs = [...tableEl.querySelectorAll('tr')];
+    if (!trs.length) return '';
+    const rows = trs.map((tr) => {
+      const cellEls = [...tr.children].filter((c) => /^(td|th)$/i.test(c.tagName));
+      const head = tr.closest('thead') != null || (cellEls.length > 0 && cellEls.every((c) => c.tagName.toLowerCase() === 'th'));
+      const cells = cellEls.map((cell, ci) => {
+        const cbase = head
+          ? Object.assign({}, base, { bold: true, color: 'FFFFFF', size: 19 })
+          : Object.assign({}, base, { bold: ci === 0, color: ci === 0 ? '211F1C' : (base.color || '33302B'), size: 20 });
+        return runsFromHtml(cell.innerHTML, cbase, ctx);
+      });
+      return { cells, head };
+    }).filter((r) => r.cells.length);
+    return rows.length ? wTable(rows) + '<w:p/>' : '';
   }
   // a whole text block → block-level Word XML (paragraphs, lists, quotes, code, tables)
   function emitTextBlock(b, ctx) {
@@ -216,6 +230,66 @@
   function imgPara(rId, id, wEmu, hEmu, name) {
     return `<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="240" w:after="40"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${wEmu}" cy="${hEmu}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="${id}" name="${esc(name)}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${esc(name)}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${wEmu}" cy="${hEmu}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
   }
+
+  // ---------- rich text → Markdown ----------
+  function inlineMd(node) {
+    let s = '';
+    node.childNodes.forEach((ch) => {
+      if (ch.nodeType === 3) { s += ch.textContent; return; }
+      if (ch.nodeType !== 1) return;
+      const tag = ch.tagName.toLowerCase();
+      const inner = inlineMd(ch);
+      if (tag === 'b' || tag === 'strong') s += '**' + inner + '**';
+      else if (tag === 'i' || tag === 'em') s += '*' + inner + '*';
+      else if (tag === 's' || tag === 'strike' || tag === 'del') s += '~~' + inner + '~~';
+      else if (tag === 'code') s += '`' + inner + '`';
+      else if (tag === 'a') s += '[' + inner + '](' + (ch.getAttribute('href') || '') + ')';
+      else if (tag === 'br') s += '  \n';
+      else s += inner;
+    });
+    return s;
+  }
+  function blockMd(html) {
+    const div = document.createElement('div');
+    div.innerHTML = html || '';
+    let out = '';
+    const emitList = (listEl, ordered, depth) => {
+      let n = 1;
+      [...listEl.children].forEach((li) => {
+        if (li.tagName.toLowerCase() !== 'li') return;
+        const nested = []; const frag = document.createElement('span');
+        [...li.childNodes].forEach((ch) => { const t = ch.nodeType === 1 ? ch.tagName.toLowerCase() : ''; if (t === 'ul' || t === 'ol') nested.push(ch); else frag.appendChild(ch.cloneNode(true)); });
+        out += '  '.repeat(depth) + (ordered ? n + '. ' : '- ') + inlineMd(frag).trim() + '\n';
+        n++;
+        nested.forEach((nl) => emitList(nl, nl.tagName.toLowerCase() === 'ol', depth + 1));
+      });
+    };
+    const emitTable = (tableEl) => {
+      const trs = [...tableEl.querySelectorAll('tr')];
+      if (!trs.length) return;
+      const rows = trs.map((tr) => [...tr.children].filter((c) => /^(td|th)$/i.test(c.tagName)).map((c) => inlineMd(c).trim().replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ')));
+      const cols = Math.max(...rows.map((r) => r.length));
+      const norm = rows.map((r) => { const c = r.slice(); while (c.length < cols) c.push(''); return c; });
+      out += '\n| ' + norm[0].join(' | ') + ' |\n| ' + norm[0].map(() => '---').join(' | ') + ' |\n';
+      norm.slice(1).forEach((r) => { out += '| ' + r.join(' | ') + ' |\n'; });
+      out += '\n';
+    };
+    let buf = [];
+    const flush = () => { if (!buf.length) return; const span = document.createElement('span'); buf.forEach((n) => span.appendChild(n.cloneNode(true))); buf = []; const t = inlineMd(span).trim(); if (t) out += t + '\n\n'; };
+    [...div.childNodes].forEach((ch) => {
+      const tag = ch.nodeType === 1 ? ch.tagName.toLowerCase() : '';
+      if (tag === 'ul' || tag === 'ol') { flush(); emitList(ch, tag === 'ol', 0); out += '\n'; }
+      else if (tag === 'table') { flush(); emitTable(ch); }
+      else if (tag === 'blockquote') { flush(); out += '> ' + inlineMd(ch).trim().replace(/\n/g, '\n> ') + '\n\n'; }
+      else if (tag === 'pre') { flush(); out += '```\n' + (ch.textContent || '').replace(/\n+$/, '') + '\n```\n\n'; }
+      else if (tag === 'div' || tag === 'p') { flush(); const t = inlineMd(ch).trim(); if (t) out += t + '\n\n'; }
+      else buf.push(ch);
+    });
+    flush();
+    return out;
+  }
+  window.GlyphDocExport.inlineMd = inlineMd;
+  window.GlyphDocExport.blockMd = blockMd;
 
   async function buildDocx(docTitle, blocks) {
     if (typeof JSZip === 'undefined') throw new Error('JSZip unavailable');
@@ -338,9 +412,11 @@ ${hasH1 ? '' : `<h1 style="margin:0 0 10pt">${esc(docTitle)}</h1>`}
   pre { font-family: Consolas, 'Courier New', monospace; font-size: 9.5pt; background: #f1efea; padding: 8pt 10pt; white-space: pre-wrap; margin: 8pt 0; }
   code { font-family: Consolas, 'Courier New', monospace; font-size: 9.5pt; background: #f1efea; color: #8a3b2f; padding: 0 2pt; }
   a { color: #2f5bd0; }
-  table.mwtbl { border-collapse: collapse; width: 100%; font-size: 10.5pt; margin: 0 0 14pt; }
-  table.mwtbl th { background: #2b2925; color: #fff; text-align: left; padding: 5pt 8pt; font-size: 9.5pt; }
-  table.mwtbl td { border: 0.75pt solid #d8d3c8; padding: 5pt 8pt; vertical-align: top; }
+  .mwp table { border-collapse: collapse; width: 100%; font-size: 10.5pt; margin: 6pt 0 14pt; }
+  .mwp table th { background: #2b2925; color: #fff; text-align: left; padding: 5pt 8pt; font-size: 9.5pt; border: 0.75pt solid #2b2925; }
+  .mwp table td { border: 0.75pt solid #d8d3c8; padding: 5pt 8pt; vertical-align: top; }
+  .mwp table td:first-child { font-weight: bold; color: #211f1c; }
+  .mwp table tr:nth-child(even) td { background: #f7f5f1; }
   mark, span[style*="background"] { background: #fcefb4; }
 </style></head>
 <body><div class="Section1">${body}</div></body></html>`;
@@ -387,9 +463,13 @@ ${hasH1 ? '' : `<h1 style="margin:0 0 10pt">${esc(docTitle)}</h1>`}
       let md = '';
       for (const b of blocks) {
         if (b.kind === 'text') {
-          const txt = textOf(b.html);
-          if (!txt) continue; // skip empty paragraphs
-          md += (b.tag === 'h1' ? '# ' : b.tag === 'h2' ? '## ' : '') + txt + '\n\n';
+          if (!textOf(b.html)) continue; // skip empty paragraphs
+          if (b.tag === 'h1' || b.tag === 'h2') {
+            const d = document.createElement('div'); d.innerHTML = b.html || '';
+            md += (b.tag === 'h1' ? '# ' : '## ') + window.GlyphDocExport.inlineMd(d).trim() + '\n\n';
+          } else {
+            md += window.GlyphDocExport.blockMd(b.html); // lists, tables, quotes, code, inline
+          }
         } else {
           const s = b.visual.spec;
           md += `> **${s.title}** (${b.visual.type})\n`;
