@@ -227,7 +227,6 @@
     let body = '';
     let figN = 0, picId = 1, hlId = 1;
     const ctx = { addHyperlink(url) { const id = 'rIdH' + (hlId++); rels.push({ id, target: url, type: 'hyperlink' }); return id; } };
-    const TABULAR = { table: 1, rowtable: 1 };
 
     // cover
     body += para(run('DOCUMENT', { bold: true, color: accent, size: 18, caps: true, ls: 40 }), { after: 60 });
@@ -239,22 +238,8 @@
       if (b.kind === 'text') {
         if (!textOf(b.html)) continue; // skip empty paragraphs — no blank lines in the export
         body += emitTextBlock(b, ctx);
-      } else if (TABULAR[b.visual.type]) {
-        // tabular diagrams (table / rowtable) export as a real, editable Word table
-        const sp = b.visual.spec || {}; const its = sp.items || [];
-        const hasVal = its.some((it) => it.value);
-        const header = hasVal ? ['Item', 'Description', 'Value'] : ['Item', 'Description'];
-        const rows = [header.map((h) => run(h, { bold: true, color: 'FFFFFF', size: 19 }))];
-        its.forEach((it) => {
-          const cells = [run(it.label || '', { bold: true, size: 20, color: '211F1C' }), run(it.detail || '', { size: 20, color: '33302B' })];
-          if (hasVal) cells.push(run(it.value || '', { bold: true, size: 20, color: accent }));
-          rows.push(cells);
-        });
-        figN++;
-        body += para(run('Table ' + figN, { bold: true, color: accent, size: 18 }) + run('  —  ' + (sp.title || ''), { color: '6F6A61', size: 18 }), { align: 'center', before: 240, after: 60 });
-        body += wTable(rows, { header: true });
-        body += para('', { after: 200 });
       } else {
+        // every visual (including table/rowtable diagrams) exports as its rendered figure
         const svg = document.querySelector(`figure[data-block-id="${b.id}"] .dg-wrap svg`);
         if (!svg) continue;
         try {
@@ -317,22 +302,13 @@ ${hasH1 ? '' : `<h1 style="margin:0 0 10pt">${esc(docTitle)}</h1>`}
 <p style="font-size:10pt;color:#6f6a61;margin:0">${today} &nbsp;·&nbsp; Made with Markwise</p>
 <p style="border-bottom:2.25pt solid ${accent};margin:14pt 0 0;font-size:1pt">&nbsp;</p>
 </div>`;
-    const TABULAR = { table: 1, rowtable: 1 };
     for (const b of blocks) {
       if (b.kind === 'text') {
         if (!textOf(b.html)) continue; // skip empty paragraphs
-        // a <div> (not <p>) so lists / blockquotes / code blocks render natively in Word
+        // a <div> (not <p>) so lists / blockquotes / code blocks / tables render natively in Word
         if (b.tag === 'h1') body += `<h1 style="margin:0 0 10pt">${b.html}</h1>`;
         else if (b.tag === 'h2') body += `<h2>${b.html}</h2>`;
         else body += `<div class="mwp">${b.html}</div>`;
-      } else if (TABULAR[b.visual.type]) {
-        const sp = b.visual.spec || {}; const its = sp.items || [];
-        const hasVal = its.some((it) => it.value);
-        figN++;
-        const head = hasVal ? '<th>Item</th><th>Description</th><th>Value</th>' : '<th>Item</th><th>Description</th>';
-        const rows = its.map((it) => `<tr><td><b>${esc(it.label || '')}</b></td><td>${esc(it.detail || '')}</td>${hasVal ? `<td style="color:${accent};font-weight:bold">${esc(it.value || '')}</td>` : ''}</tr>`).join('');
-        body += `<p style="text-align:center;font-size:9pt;color:#6f6a61;margin:14pt 0 4pt"><b style="color:${accent}">Table ${figN}</b> &nbsp;—&nbsp; ${esc(sp.title || '')}</p>
-<table class="mwtbl"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
       } else {
         const svg = document.querySelector(`figure[data-block-id="${b.id}"] .dg-wrap svg`);
         if (svg) {
