@@ -48,7 +48,13 @@
     const tokenFromPath = (location.pathname.match(/^\/share\/(.+)$/) || [])[1];
     const token = tokenFromPath ? decodeURIComponent(tokenFromPath) : new URLSearchParams(location.search).get('t');
     const endpoint = docMatch ? '/api/docs/' + docMatch[1] + '/view' : token ? '/api/shared/' + encodeURIComponent(token) : null;
-    if (docMatch) tuneTopbarForMember();
+    if (docMatch) {
+      tuneTopbarForMember();
+    } else {
+      // Public link: if the visitor happens to be signed in, show member chrome
+      // instead of the "Try Markwise" call-to-action.
+      fetch('/api/auth/me', { credentials: 'same-origin' }).then((r) => { if (r.ok) tuneTopbarForMember(); }).catch(() => {});
+    }
     if (!endpoint) {
       root.render(<div className="state">This share link is incomplete.</div>);
       return;
