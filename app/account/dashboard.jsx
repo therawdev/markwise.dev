@@ -2,6 +2,24 @@
 (function () {
   const { useState, useEffect, useCallback } = React;
 
+  // Small stroke icons (Feather-style) for the document row actions.
+  function MWIcon({ paths }) {
+    return (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {paths}
+      </svg>
+    );
+  }
+  const DOC_ICONS = {
+    open: <React.Fragment><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></React.Fragment>,
+    present: <React.Fragment><rect x="2" y="3" width="20" height="14" rx="2" /><polygon points="10 7 15 10 10 13" /><line x1="12" y1="17" x2="12" y2="21" /><line x1="8" y1="21" x2="16" y2="21" /></React.Fragment>,
+    download: <React.Fragment><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></React.Fragment>,
+    rename: <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />,
+    duplicate: <React.Fragment><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></React.Fragment>,
+    trash: <React.Fragment><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></React.Fragment>,
+  };
+
   function MWDashboard({ ctx }) {
     const { me, reload, navigate, toast } = ctx;
 
@@ -394,47 +412,40 @@
                         <td className="dim">{mwAgo(doc.updated_at)}</td>
                         <td className="num">
                           <span className="row-actions">
-                            <a
-                              className="ghost-btn sm as-link"
-                              href={'/index.html?doc=' + doc.id}
-                            >
-                              Open
+                            <a className="icon-btn" title="Open in editor" aria-label="Open in editor"
+                              href={'/index.html?doc=' + doc.id}>
+                              <MWIcon paths={DOC_ICONS.open} />
+                            </a>
+                            <a className="icon-btn" title="Present" aria-label="Present"
+                              href={'/index.html?doc=' + doc.id + '&present=1'}>
+                              <MWIcon paths={DOC_ICONS.present} />
+                            </a>
+                            <a className="icon-btn" title="Download / export" aria-label="Download or export"
+                              href={'/index.html?doc=' + doc.id + '&export=1'}>
+                              <MWIcon paths={DOC_ICONS.download} />
                             </a>
                             {canEditDoc(doc) ? (
-                              <button
-                                className="ghost-btn sm"
-                                onClick={() =>
-                                  setEditing({ id: doc.id, value: doc.title || '' })
-                                }
-                              >
-                                Rename
+                              <button className="icon-btn" title="Rename" aria-label="Rename"
+                                onClick={() => setEditing({ id: doc.id, value: doc.title || '' })}>
+                                <MWIcon paths={DOC_ICONS.rename} />
                               </button>
                             ) : null}
                             {canCreateInCompany(doc.company_id) ? (
-                              <button
-                                className="ghost-btn sm"
-                                onClick={() => duplicateDoc(doc)}
-                              >
-                                Duplicate
+                              <button className="icon-btn" title="Duplicate" aria-label="Duplicate"
+                                onClick={() => duplicateDoc(doc)}>
+                                <MWIcon paths={DOC_ICONS.duplicate} />
                               </button>
                             ) : null}
                             {canDeleteDoc(doc) ? (
-                              confirmDel === doc.id ? (
-                                <button
-                                  className="danger-btn sm solid"
-                                  onClick={() => deleteDoc(doc)}
-                                  onMouseLeave={() => setConfirmDel(null)}
-                                >
-                                  Confirm
-                                </button>
-                              ) : (
-                                <button
-                                  className="danger-btn sm"
-                                  onClick={() => setConfirmDel(doc.id)}
-                                >
-                                  Delete
-                                </button>
-                              )
+                              <button
+                                className={'icon-btn del' + (confirmDel === doc.id ? ' arm' : '')}
+                                title={confirmDel === doc.id ? 'Click again to delete' : 'Delete'}
+                                aria-label="Delete"
+                                onClick={() => (confirmDel === doc.id ? deleteDoc(doc) : setConfirmDel(doc.id))}
+                                onMouseLeave={() => confirmDel === doc.id && setConfirmDel(null)}
+                              >
+                                <MWIcon paths={DOC_ICONS.trash} />
+                              </button>
                             ) : null}
                           </span>
                         </td>

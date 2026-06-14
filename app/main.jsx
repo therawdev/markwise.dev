@@ -53,6 +53,12 @@
     const [space, setSpace] = useState('doc');
     const [previewVar, setPreviewVar] = useState(null);
     useEffect(() => { setPreviewVar(null); }, [selVis]);
+    // Deep-link from the dashboard: ?present=1 opens Present, ?export=1 opens Export.
+    useEffect(() => {
+      const q = new URLSearchParams(location.search);
+      if (q.get('present')) setDeck(true);
+      else if (q.get('export')) setDocExport(true);
+    }, []);
     const pickerRef = useRef(null);
     pickerRef.current = picker;
     const fabRef = useRef(fab);

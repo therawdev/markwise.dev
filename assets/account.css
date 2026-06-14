@@ -54,6 +54,7 @@
   }
   .icon-btn:hover { background: var(--bg); color: var(--ink); }
   .icon-btn.del:hover { background: #fdf3f1; color: #b3422f; }
+  .icon-btn.del.arm { background: #fdf3f1; color: #b3422f; box-shadow: 0 0 0 1px #ecd8d3 inset; }
   .as-link { display: inline-flex; align-items: center; text-decoration: none; }
 
   /* ---------- fields ---------- */

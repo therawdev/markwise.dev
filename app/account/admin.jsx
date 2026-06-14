@@ -409,7 +409,7 @@
                             </label>
                             <div className="field-row">
                               <input className="fld" type="password"
-                                placeholder={c.hasKey ? 'Enter a new key to replace' : 'Paste API key'}
+                                placeholder={!provData.secretsConfigured ? 'Set SECRETS_KEY on the server to enable' : (c.hasKey ? 'Enter a new key to replace' : 'Paste API key')}
                                 value={keyDrafts[c.provider] || ''}
                                 onChange={(e) => setKeyDrafts((d) => ({ ...d, [c.provider]: e.target.value }))}
                                 disabled={!provData.secretsConfigured} />
