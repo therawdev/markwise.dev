@@ -55,6 +55,11 @@
     const [provBusy, setProvBusy] = useState('');    // provider id mid save/test
     const [provTest, setProvTest] = useState({});    // provider id -> { ok, reason|sample }
 
+    // AI request log
+    const [aiReqs, setAiReqs] = useState(null);      // { total, rows }
+    const [reqStatus, setReqStatus] = useState('');  // '' | 'ok' | 'error'
+    const [aiReqDetail, setAiReqDetail] = useState(null); // full row in the viewer
+
     const [userQ, setUserQ] = useState('');
     const [coQ, setCoQ] = useState('');
     const [newCo, setNewCo] = useState('');
@@ -87,6 +92,13 @@
     }, []);
 
     useEffect(() => { loadAll(); }, [loadAll]);
+
+    // Lazy-load the AI request log only when its tab is open (it can be large).
+    useEffect(() => {
+      if (tab !== 'ailogs') return;
+      API.get('/api/admin/ai-requests' + (reqStatus ? '?status=' + reqStatus : '')).then(setAiReqs).catch(() => {});
+    }, [tab, reqStatus]);
+    const openReq = (id) => API.get('/api/admin/ai-requests/' + id).then(setAiReqDetail).catch((e) => toast(e.message));
 
     const refetchStats = () => API.get('/api/admin/stats').then(setStats).catch(() => {});
     const refetchUsers = () => API.get('/api/admin/users').then(setUsers).catch(() => {});
@@ -235,6 +247,7 @@
     const tabs = [
       { id: 'overview', label: 'Overview' },
       { id: 'ai', label: 'AI provider' },
+      { id: 'ailogs', label: 'AI logs' },
       { id: 'users', label: 'Users', count: users.length },
       { id: 'companies', label: 'Companies', count: companies.length },
       { id: 'platform', label: 'Platform' },
@@ -389,6 +402,69 @@
                 </div>
               ) : null}
             </MWSection>
+          ) : null}
+
+          {!loading && tab === 'ailogs' ? (
+            <MWSection
+              title="AI request log"
+              sub="Every AI call — prompt, response, provider & model — for review."
+              actions={
+                <select className="fld sel" value={reqStatus} onChange={(e) => setReqStatus(e.target.value)}>
+                  <option value="">All</option>
+                  <option value="ok">Succeeded</option>
+                  <option value="error">Errors</option>
+                </select>
+              }
+            >
+              <div className="card">
+                {!aiReqs ? (
+                  <div className="empty-note">Loading…</div>
+                ) : aiReqs.rows.length === 0 ? (
+                  <div className="empty-note">No AI requests logged yet.</div>
+                ) : (
+                  <table className="tbl">
+                    <thead>
+                      <tr><th>Time</th><th>User</th><th>Provider</th><th>Model</th><th>Status</th><th>ms</th><th>Prompt</th></tr>
+                    </thead>
+                    <tbody>
+                      {aiReqs.rows.map((r) => (
+                        <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openReq(r.id)}>
+                          <td>{new Date(r.created_at).toLocaleString()}</td>
+                          <td>{r.user_email || '—'}</td>
+                          <td>{r.provider}{r.failover ? ' ↩' : ''}</td>
+                          <td>{r.model || '—'}</td>
+                          <td><b style={{ color: r.status === 'ok' ? '#2f8a4e' : '#b4462f' }}>{r.status}</b></td>
+                          <td>{r.latency_ms != null ? r.latency_ms : '—'}</td>
+                          <td style={{ color: '#7a756c', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.error || r.prompt_preview || ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {aiReqs && aiReqs.total > aiReqs.rows.length ? (
+                  <div className="empty-note">Showing {aiReqs.rows.length} of {aiReqs.total}.</div>
+                ) : null}
+              </div>
+            </MWSection>
+          ) : null}
+
+          {aiReqDetail ? (
+            <div onClick={() => setAiReqDetail(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(20,18,15,.45)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+              <div className="card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 760, width: '100%', maxHeight: '86vh', overflow: 'auto', padding: 18 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+                  <b>AI request #{aiReqDetail.id}</b>
+                  <button className="btn sm ghost" onClick={() => setAiReqDetail(null)}>Close</button>
+                </div>
+                <div style={{ fontSize: 12, color: '#7a756c', marginBottom: 12 }}>
+                  {new Date(aiReqDetail.created_at).toLocaleString()} · {aiReqDetail.provider}{aiReqDetail.model ? ' / ' + aiReqDetail.model : ''} · {aiReqDetail.status}{aiReqDetail.latency_ms != null ? ' · ' + aiReqDetail.latency_ms + 'ms' : ''}{aiReqDetail.user_email ? ' · ' + aiReqDetail.user_email : ''}
+                </div>
+                {aiReqDetail.error ? <div style={{ color: '#b4462f', marginBottom: 12 }}>{aiReqDetail.error}</div> : null}
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#7a756c' }}>PROMPT</label>
+                <pre style={{ whiteSpace: 'pre-wrap', background: '#faf8f4', border: '1px solid #eee', borderRadius: 8, padding: 10, fontSize: 12, margin: '4px 0 12px' }}>{aiReqDetail.prompt || ''}</pre>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#7a756c' }}>RESPONSE</label>
+                <pre style={{ whiteSpace: 'pre-wrap', background: '#faf8f4', border: '1px solid #eee', borderRadius: 8, padding: 10, fontSize: 12, margin: '4px 0 0' }}>{aiReqDetail.response || '(none)'}</pre>
+              </div>
+            </div>
           ) : null}
 
           {!loading && tab === 'users' ? (

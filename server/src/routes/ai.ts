@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../db.js';
 import { requireAuth, hasPermission } from '../middleware.js';
 import { activeProvider, providerStatus, PROVIDERS } from '../providers/index.js';
+import { resolveRuntime } from '../providers/config.js';
 import { aiLimiter } from '../rate-limit.js';
 
 export const aiRouter = Router();
@@ -40,24 +41,26 @@ aiRouter.post('/complete', aiLimiter, async (req, res) => {
   for (const provider of chain) {
     const gate = await provider.available();
     if (!gate.ok) { lastErr = new Error(gate.reason || 'unavailable'); continue; }
+    const isFailover = provider.id !== primary.id;
+    const rt = await resolveRuntime(provider.id, companyId);
+    const t0 = Date.now();
     try {
       const text = await provider.complete(prompt);
-      await db('ai_usage').insert({
-        user_id: req.user!.id,
-        company_id: companyId,
-        provider: provider.id,
-        kind: 'complete',
-        ok: true,
+      const ms = Date.now() - t0;
+      await db('ai_usage').insert({ user_id: req.user!.id, company_id: companyId, provider: provider.id, kind: 'complete', ok: true });
+      await db('ai_requests').insert({
+        user_id: req.user!.id, company_id: companyId, provider: provider.id, model: rt.model || null,
+        status: 'ok', failover: isFailover, latency_ms: ms, prompt, response: text,
       });
       return res.json({ text, provider: provider.id });
     } catch (e) {
+      const ms = Date.now() - t0;
       lastErr = e;
-      await db('ai_usage').insert({
-        user_id: req.user!.id,
-        company_id: companyId,
-        provider: provider.id,
-        kind: 'complete',
-        ok: false,
+      await db('ai_usage').insert({ user_id: req.user!.id, company_id: companyId, provider: provider.id, kind: 'complete', ok: false });
+      await db('ai_requests').insert({
+        user_id: req.user!.id, company_id: companyId, provider: provider.id, model: rt.model || null,
+        status: 'error', failover: isFailover, latency_ms: ms, prompt, response: null,
+        error: e instanceof Error ? String(e.message).slice(0, 2000) : 'error',
       });
     }
   }

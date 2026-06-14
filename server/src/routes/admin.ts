@@ -179,6 +179,37 @@ adminRouter.post('/providers/:id/test', async (req, res) => {
   }
 });
 
+// ---- AI request log: full prompts / responses for review ----
+adminRouter.get('/ai-requests', async (req, res) => {
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 100));
+  const offset = Math.max(0, Number(req.query.offset) || 0);
+  let q = db('ai_requests')
+    .leftJoin('users', 'users.id', 'ai_requests.user_id')
+    .leftJoin('companies', 'companies.id', 'ai_requests.company_id')
+    .orderBy('ai_requests.id', 'desc');
+  if (req.query.provider) q = q.where('ai_requests.provider', String(req.query.provider));
+  if (req.query.status) q = q.where('ai_requests.status', String(req.query.status));
+  const rows = await q.limit(limit).offset(offset).select(
+    'ai_requests.id', 'ai_requests.created_at', 'ai_requests.provider', 'ai_requests.model',
+    'ai_requests.status', 'ai_requests.failover', 'ai_requests.latency_ms',
+    db.raw('left(ai_requests.prompt, 140) as prompt_preview'),
+    'ai_requests.error', 'users.email as user_email', 'companies.name as company_name',
+  );
+  const [{ count }] = await db('ai_requests').count('* as count');
+  res.json({ total: Number(count), rows });
+});
+
+adminRouter.get('/ai-requests/:id', async (req, res) => {
+  const row = await db('ai_requests')
+    .leftJoin('users', 'users.id', 'ai_requests.user_id')
+    .leftJoin('companies', 'companies.id', 'ai_requests.company_id')
+    .where('ai_requests.id', Number(req.params.id))
+    .select('ai_requests.*', 'users.email as user_email', 'companies.name as company_name')
+    .first();
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  res.json(row);
+});
+
 adminRouter.get('/audit', async (req, res) => {
   const logs = await db('audit_logs')
     .leftJoin('users', 'users.id', 'audit_logs.actor_id')

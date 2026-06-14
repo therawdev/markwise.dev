@@ -214,6 +214,29 @@ async function migrate() {
     });
   }
 
+  // Full AI request log — prompt, response, provider/model, status, latency. Stored
+  // in full (no retention window) so the app admin can review and improve prompts.
+  // One row per provider attempt (failovers included).
+  if (!(await has('ai_requests'))) {
+    await db.schema.createTable('ai_requests', (t) => {
+      t.increments('id');
+      t.integer('user_id').references('users.id').onDelete('SET NULL');
+      t.integer('company_id').references('companies.id').onDelete('SET NULL');
+      t.string('provider').notNullable();
+      t.string('model');
+      t.string('status').notNullable(); // 'ok' | 'error'
+      t.boolean('failover').notNullable().defaultTo(false);
+      t.integer('latency_ms');
+      t.integer('input_tokens');
+      t.integer('output_tokens');
+      t.text('prompt');
+      t.text('response');
+      t.text('error');
+      t.timestamp('created_at').defaultTo(db.fn.now());
+      t.index(['created_at']);
+    });
+  }
+
   // Backfill: every role that can edit documents should also be able to comment,
   // and the immutable Owner role gets the full (now-larger) permission set.
   const roles = await db('roles').select('id', 'name', 'is_system', 'permissions');
