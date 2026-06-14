@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { db, audit, getSetting } from '../db.js';
 import { setAuthCookie, clearAuthCookie } from '../auth.js';
-import { requireAuth } from '../middleware.js';
+import { requireAuth, permissionsFor } from '../middleware.js';
 import { authLimiter } from '../rate-limit.js';
 
 export const authRouter = Router();
@@ -118,12 +118,24 @@ authRouter.get('/me', requireAuth, async (req, res) => {
 authRouter.get('/notifications', requireAuth, async (req, res) => {
   const me = req.user!;
   const myCompanyIds = (await db('memberships').where({ user_id: me.id }).select('company_id')).map((r) => r.company_id);
+  // Company-wide events (target `company:X`) are org-administrative — invites,
+  // billing, settings, provider-key changes. Only surface them to members who can
+  // administer that company; a regular member must NOT see another role's admin
+  // activity. Everyone still receives events directed at them personally
+  // (target `user:me`), e.g. their role changing or a doc being shared with them.
+  const ORG_ADMIN_PERMS = ['org:manage_members', 'org:manage_roles', 'org:settings', 'org:billing'];
+  const adminCompanyIds: number[] = [];
+  for (const cid of myCompanyIds) {
+    if (me.is_app_owner) { adminCompanyIds.push(cid); continue; }
+    const perms = await permissionsFor(me.id, cid);
+    if (ORG_ADMIN_PERMS.some((p) => perms.has(p))) adminCompanyIds.push(cid);
+  }
   const items = await db('audit_logs')
     .leftJoin('users', 'users.id', 'audit_logs.actor_id')
     .whereNot('audit_logs.actor_id', me.id) // never notify me about what I did
     .andWhere((b) => {
       b.where('audit_logs.target', `user:${me.id}`);
-      if (myCompanyIds.length) b.orWhereIn('audit_logs.target', myCompanyIds.map((id) => `company:${id}`));
+      if (adminCompanyIds.length) b.orWhereIn('audit_logs.target', adminCompanyIds.map((id) => `company:${id}`));
     })
     .orderBy('audit_logs.id', 'desc')
     .limit(15)
