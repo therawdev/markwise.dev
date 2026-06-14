@@ -6,3 +6,11 @@ dist/
 .omc/
 improve_ui_pages.zip
 .design/
+
+# Internal / working artifacts — kept out of the public repo
+chats/
+project/
+HANDOFF.md
+
+# OS / editor junk
+.DS_Store
