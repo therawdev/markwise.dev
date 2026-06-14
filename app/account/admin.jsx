@@ -48,6 +48,13 @@
     const [platform, setPlatform] = useState({ allow_signups: true, maintenance: false });
     const [loading, setLoading] = useState(true);
 
+    // provider config (keys/models stored in DB)
+    const [provData, setProvData] = useState(null); // { secretsConfigured, providers: [...] }
+    const [keyDrafts, setKeyDrafts] = useState({});  // provider id -> new key being typed
+    const [modelDrafts, setModelDrafts] = useState({}); // provider id -> model being typed
+    const [provBusy, setProvBusy] = useState('');    // provider id mid save/test
+    const [provTest, setProvTest] = useState({});    // provider id -> { ok, reason|sample }
+
     const [userQ, setUserQ] = useState('');
     const [coQ, setCoQ] = useState('');
     const [newCo, setNewCo] = useState('');
@@ -63,13 +70,15 @@
         API.get('/api/admin/audit?limit=500'),
         API.get('/api/admin/ai-usage-daily'),
         API.get('/api/admin/platform'),
-      ]).then(([s, u, co, al, ud, pf]) => {
+        API.get('/api/admin/providers'),
+      ]).then(([s, u, co, al, ud, pf, pv]) => {
         setStats(s);
         setUsers(u);
         setCompanies(co);
         setAuditLogs(al);
         setUsageDaily(ud);
         setPlatform(pf);
+        setProvData(pv);
         setLoading(false);
       }).catch((e) => {
         toast(e.message || 'Failed to load admin data');
@@ -82,6 +91,7 @@
     const refetchStats = () => API.get('/api/admin/stats').then(setStats).catch(() => {});
     const refetchUsers = () => API.get('/api/admin/users').then(setUsers).catch(() => {});
     const refetchCompanies = () => API.get('/api/admin/companies').then(setCompanies).catch(() => {});
+    const refetchProviders = () => API.get('/api/admin/providers').then(setProvData).catch(() => {});
 
     // ---- AI provider ----
     const setProvider = async (p) => {
@@ -100,6 +110,26 @@
         toast(next ? 'Claude SDK enabled' : 'Claude SDK disabled');
         await refetchStats();
       } catch (e) { toast(e.message); }
+    };
+
+    // ---- provider key/model config (stored encrypted in the DB) ----
+    const saveProvider = async (id, patch) => {
+      setProvBusy(id);
+      try {
+        await API.put('/api/admin/providers/' + id, patch);
+        if (patch.apiKey !== undefined) setKeyDrafts((d) => ({ ...d, [id]: '' }));
+        toast('Saved ' + id);
+        await Promise.all([refetchProviders(), refetchStats()]);
+      } catch (e) { toast(e.message); } finally { setProvBusy(''); }
+    };
+    const testProvider = async (id) => {
+      setProvBusy(id);
+      setProvTest((t) => ({ ...t, [id]: undefined }));
+      try {
+        const r = await API.post('/api/admin/providers/' + id + '/test', {});
+        setProvTest((t) => ({ ...t, [id]: r }));
+      } catch (e) { setProvTest((t) => ({ ...t, [id]: { ok: false, reason: e.message } })); }
+      finally { setProvBusy(''); }
     };
 
     // ---- users ----
@@ -294,11 +324,70 @@
                 <div className="enable-box">
                   <div>
                     <b>Enable Claude SDK / Claude API</b>
-                    <p>Enabling also requires ANTHROPIC_API_KEY set on the server.</p>
+                    <p>Enabling also requires an Anthropic API key (below or via env).</p>
                   </div>
                   <MWSwitch on={claudeEnabled} onChange={() => toggleClaudeSdk(claudeEnabled)} />
                 </div>
               </div>
+
+              {provData ? (
+                <div style={{ marginTop: 18 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                    <b>Provider keys &amp; models</b>
+                    <small style={{ color: provData.secretsConfigured ? '#7a756c' : '#b4462f' }}>
+                      {provData.secretsConfigured ? 'Stored AES-256-GCM encrypted in the database.' : 'SECRETS_KEY not set on the server — keys can’t be stored yet.'}
+                    </small>
+                  </div>
+                  {provData.providers.map((c) => {
+                    const label = (providers.find((p) => p.id === c.provider) || {}).label || c.provider;
+                    const busy = provBusy === c.provider;
+                    const tr = provTest[c.provider];
+                    const modelVal = modelDrafts[c.provider] !== undefined ? modelDrafts[c.provider] : (c.model || '');
+                    return (
+                      <div key={c.provider} className="card" style={{ padding: '12px 14px', marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <b>{label}</b>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <small style={{ color: '#7a756c' }}>{c.enabled ? 'enabled' : 'disabled'}</small>
+                            <MWSwitch on={c.enabled} onChange={() => saveProvider(c.provider, { enabled: !c.enabled })} />
+                          </span>
+                        </div>
+                        {c.needsKey ? (
+                          <div style={{ marginBottom: 8 }}>
+                            <label style={{ fontSize: 11, color: '#7a756c', display: 'block', marginBottom: 3 }}>
+                              API key — {c.hasKey ? `set (${c.keyMasked}, source: ${c.keySource})` : `none (source: ${c.keySource})`}
+                            </label>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <input className="fld" type="password" style={{ flex: 1 }}
+                                placeholder={c.hasKey ? 'Enter a new key to replace' : 'Paste API key'}
+                                value={keyDrafts[c.provider] || ''}
+                                onChange={(e) => setKeyDrafts((d) => ({ ...d, [c.provider]: e.target.value }))}
+                                disabled={!provData.secretsConfigured} />
+                              <button className="btn sm" disabled={busy || !keyDrafts[c.provider]} onClick={() => saveProvider(c.provider, { apiKey: keyDrafts[c.provider] })}>Save key</button>
+                              {c.hasKey && c.keySource !== 'env' ? (
+                                <button className="btn sm ghost" disabled={busy} onClick={() => saveProvider(c.provider, { apiKey: '' })}>Clear</button>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 11, color: '#7a756c', marginBottom: 8 }}>CLI-based — no API key needed.</div>
+                        )}
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input className="fld" style={{ flex: 1 }} placeholder="model (default if blank)" value={modelVal}
+                            onChange={(e) => setModelDrafts((d) => ({ ...d, [c.provider]: e.target.value }))} />
+                          <button className="btn sm" disabled={busy} onClick={() => saveProvider(c.provider, { model: modelVal })}>Save model</button>
+                          <button className="btn sm ghost" disabled={busy} onClick={() => testProvider(c.provider)}>{busy ? 'Testing…' : 'Test'}</button>
+                        </div>
+                        {tr ? (
+                          <small style={{ display: 'block', marginTop: 6, color: tr.ok ? '#2f8a4e' : '#b4462f' }}>
+                            {tr.ok ? '✓ ' + (tr.sample || 'OK') : '✗ ' + (tr.reason || 'failed')}
+                          </small>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
             </MWSection>
           ) : null}
 

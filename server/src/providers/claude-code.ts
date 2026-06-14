@@ -3,10 +3,11 @@
 // Requires the `claude` CLI installed and authenticated on the host.
 import { execFile } from 'node:child_process';
 import type { AIProvider } from './types.js';
+import { resolveRuntime } from './config.js';
 
 const BIN = process.env.CLAUDE_CODE_BIN || 'claude';
-// Fast, cheap model for the app's one-shot JSON completions. Alias or full id.
-const MODEL = process.env.CLAUDE_CODE_MODEL || 'haiku';
+// Fast, cheap default model for the app's one-shot JSON completions. Alias or full id.
+const DEFAULT_MODEL = 'haiku';
 
 function run(args: string[], input?: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -26,6 +27,8 @@ export const claudeCodeProvider: AIProvider = {
   label: 'Claude Code (headless CLI)',
 
   async available() {
+    const rt = await resolveRuntime('claude_code');
+    if (!rt.enabled) return { ok: false, reason: 'Claude Code is disabled' };
     try {
       await run(['--version']);
       return { ok: true };
@@ -35,8 +38,10 @@ export const claudeCodeProvider: AIProvider = {
   },
 
   async complete(prompt: string): Promise<string> {
+    const rt = await resolveRuntime('claude_code');
+    const model = rt.model || DEFAULT_MODEL;
     // Prompt goes via stdin to avoid argv length limits and shell-quoting issues.
-    const out = await run(['-p', '--output-format', 'json', '--model', MODEL], prompt);
+    const out = await run(['-p', '--output-format', 'json', '--model', model], prompt);
     const parsed = JSON.parse(out);
     if (parsed.is_error) throw new Error(`Claude Code error: ${parsed.result || 'unknown'}`);
     return String(parsed.result || '');

@@ -1,18 +1,12 @@
-// Claude SDK / Claude API provider — DISABLED for this session.
-// Fully implemented; enable by setting CLAUDE_API_ENABLED=true (or the admin
-// panel toggle) plus ANTHROPIC_API_KEY. Uses the official Anthropic SDK.
+// Claude SDK / Claude API provider. Gated by claudeApiEnabled() (env or admin
+// toggle). Key & model resolved from the DB (admin UI / per-org) with
+// ANTHROPIC_API_KEY env as fallback. Uses the official Anthropic SDK.
 import Anthropic from '@anthropic-ai/sdk';
 import { getSetting } from '../db.js';
 import type { AIProvider } from './types.js';
+import { resolveRuntime } from './config.js';
 
-const MODEL = 'claude-opus-4-8';
-
-let anthropic: Anthropic | null = null;
-
-function client(): Anthropic {
-  if (!anthropic) anthropic = new Anthropic();
-  return anthropic;
-}
+const DEFAULT_MODEL = 'claude-opus-4-8';
 
 export async function claudeApiEnabled(): Promise<boolean> {
   if (process.env.CLAUDE_API_ENABLED === 'true') return true;
@@ -21,23 +15,25 @@ export async function claudeApiEnabled(): Promise<boolean> {
 
 export const claudeProvider: AIProvider = {
   id: 'claude',
-  label: 'Claude SDK / Claude API (disabled this session)',
+  label: 'Claude SDK / Claude API',
 
   async available() {
     if (!(await claudeApiEnabled())) {
-      return { ok: false, reason: 'Claude SDK / Claude API is disabled for this session' };
+      return { ok: false, reason: 'Claude API is disabled (enable it in the admin panel)' };
     }
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return { ok: false, reason: 'ANTHROPIC_API_KEY is not set' };
-    }
+    const rt = await resolveRuntime('claude');
+    if (!rt.enabled) return { ok: false, reason: 'Claude is disabled' };
+    if (!rt.apiKey) return { ok: false, reason: 'No Anthropic API key — set it in the admin panel' };
     return { ok: true };
   },
 
   async complete(prompt: string): Promise<string> {
     const gate = await this.available();
     if (!gate.ok) throw new Error(gate.reason);
-    const response = await client().messages.create({
-      model: MODEL,
+    const rt = await resolveRuntime('claude');
+    const client = new Anthropic({ apiKey: rt.apiKey });
+    const response = await client.messages.create({
+      model: rt.model || DEFAULT_MODEL,
       max_tokens: 16000,
       thinking: { type: 'adaptive' },
       messages: [{ role: 'user', content: prompt }],

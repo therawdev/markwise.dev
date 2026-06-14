@@ -3,6 +3,8 @@ import { db, setSetting, getSetting, audit } from '../db.js';
 import { requireAuth, requireAppOwner } from '../middleware.js';
 import { setAuthCookie } from '../auth.js';
 import { PROVIDERS, providerStatus } from '../providers/index.js';
+import { listProviderConfigs, setProviderConfig } from '../providers/config.js';
+import { secretsConfigured } from '../secrets.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth);
@@ -137,6 +139,44 @@ adminRouter.put('/claude-enabled', async (req, res) => {
   await setSetting('claude_api_enabled', enabled);
   await audit(req.user!.id, 'admin.claude_toggle', 'settings', { enabled });
   res.json({ ok: true, enabled });
+});
+
+// ---- AI provider config: API keys & models stored (encrypted) in the DB ----
+adminRouter.get('/providers', async (_req, res) => {
+  res.json({ secretsConfigured: secretsConfigured(), providers: await listProviderConfigs(null) });
+});
+
+adminRouter.put('/providers/:id', async (req, res) => {
+  const id = String(req.params.id);
+  if (!PROVIDERS[id]) return res.status(400).json({ error: 'Unknown provider' });
+  const { enabled, model, apiKey } = req.body || {};
+  if (apiKey && !secretsConfigured()) {
+    return res.status(400).json({ error: 'SECRETS_KEY is not configured on the server — cannot store keys' });
+  }
+  await setProviderConfig(id, null, {
+    enabled: enabled === undefined ? undefined : !!enabled,
+    model: model === undefined ? undefined : model ? String(model) : null,
+    apiKey: apiKey === undefined ? undefined : apiKey ? String(apiKey) : null,
+  });
+  await audit(req.user!.id, 'admin.provider_config', 'provider:' + id, {
+    enabled, model: model || null, keyChanged: apiKey !== undefined,
+  });
+  res.json({ ok: true, providers: await listProviderConfigs(null) });
+});
+
+// Live connection test: gate check, then a tiny real completion.
+adminRouter.post('/providers/:id/test', async (req, res) => {
+  const id = String(req.params.id);
+  const p = PROVIDERS[id];
+  if (!p) return res.status(400).json({ error: 'Unknown provider' });
+  const gate = await p.available();
+  if (!gate.ok) return res.json({ ok: false, reason: gate.reason });
+  try {
+    const out = await p.complete('Reply with only the word: ok');
+    res.json({ ok: true, sample: String(out).trim().slice(0, 100) });
+  } catch (e) {
+    res.json({ ok: false, reason: e instanceof Error ? e.message : 'request failed' });
+  }
 });
 
 adminRouter.get('/audit', async (req, res) => {

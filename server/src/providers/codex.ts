@@ -1,15 +1,19 @@
-// OpenAI Codex SDK provider (active default).
-// The SDK wraps the bundled `codex` CLI: it spawns the binary and exchanges
-// JSONL events over stdio. Auth: CODEX_API_KEY (set from OPENAI_API_KEY here)
-// or a host-level `codex login`.
+// OpenAI Codex SDK provider. The SDK wraps the bundled `codex` CLI (spawns the
+// binary, JSONL over stdio). Key & model resolved from the DB (admin UI / per-org)
+// with OPENAI_API_KEY / CODEX_MODEL env as fallback; without a key the CLI may
+// still be authenticated via a host-level `codex login`.
 import { Codex } from '@openai/codex-sdk';
 import type { AIProvider } from './types.js';
+import { resolveRuntime } from './config.js';
 
 let codex: Codex | null = null;
+let codexKey: string | undefined;
 
-function client(): Codex {
-  if (!codex) {
-    codex = new Codex(process.env.OPENAI_API_KEY ? { apiKey: process.env.OPENAI_API_KEY } : {});
+// rebuild the client when the resolved key changes (e.g. admin updated it)
+function client(apiKey?: string): Codex {
+  if (!codex || codexKey !== apiKey) {
+    codex = new Codex(apiKey ? { apiKey } : {});
+    codexKey = apiKey;
   }
   return codex;
 }
@@ -19,21 +23,23 @@ export const codexProvider: AIProvider = {
   label: 'OpenAI Codex SDK',
 
   async available() {
-    if (process.env.OPENAI_API_KEY) return { ok: true };
-    // Without an explicit key the CLI may still be authenticated via `codex login`.
-    return { ok: true, reason: 'No OPENAI_API_KEY set — relying on host `codex login` credentials' };
+    const rt = await resolveRuntime('codex');
+    if (!rt.enabled) return { ok: false, reason: 'Codex is disabled' };
+    if (rt.apiKey) return { ok: true };
+    return { ok: true, reason: 'No OpenAI key set — relying on host `codex login` credentials' };
   },
 
   async complete(prompt: string): Promise<string> {
+    const rt = await resolveRuntime('codex');
     // A fresh thread per request: completions are stateless one-shots.
-    const thread = client().startThread({
+    const thread = client(rt.apiKey).startThread({
       sandboxMode: 'read-only',
       skipGitRepoCheck: true,
       // One-shot JSON tasks need little deliberation and no web access.
       // ("minimal" is rejected with a 400 by gpt-5.5 via the ChatGPT backend — use "low".)
       modelReasoningEffort: (process.env.CODEX_REASONING_EFFORT as 'low') || 'low',
       webSearchMode: 'disabled',
-      ...(process.env.CODEX_MODEL ? { model: process.env.CODEX_MODEL } : {}),
+      ...(rt.model ? { model: rt.model } : {}),
     });
     const turn = await thread.run(prompt);
     if (!turn.finalResponse) throw new Error('Codex returned an empty response');

@@ -1,9 +1,9 @@
-// Google Gemini provider (REST, no SDK dependency).
-// Auth: GEMINI_API_KEY. Model: GEMINI_MODEL (default gemini-2.5-flash —
-// available on the free tier and fast for the app's one-shot JSON tasks).
+// Google Gemini provider (REST, no SDK dependency). Key & model are resolved from
+// the DB (admin UI / per-org) with GEMINI_API_KEY / GEMINI_MODEL env as fallback.
 import type { AIProvider } from './types.js';
+import { resolveRuntime } from './config.js';
 
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const DEFAULT_MODEL = 'gemini-2.5-flash';
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
 export const geminiProvider: AIProvider = {
@@ -11,17 +11,19 @@ export const geminiProvider: AIProvider = {
   label: 'Google Gemini',
 
   async available() {
-    if (!process.env.GEMINI_API_KEY) return { ok: false, reason: 'GEMINI_API_KEY is not set' };
+    const rt = await resolveRuntime('gemini');
+    if (!rt.enabled) return { ok: false, reason: 'Gemini is disabled' };
+    if (!rt.apiKey) return { ok: false, reason: 'No Gemini API key — set it in the admin panel' };
     return { ok: true };
   },
 
   async complete(prompt: string): Promise<string> {
-    const r = await fetch(`${BASE}/models/${MODEL}:generateContent`, {
+    const rt = await resolveRuntime('gemini');
+    if (!rt.apiKey) throw new Error('No Gemini API key configured');
+    const model = rt.model || DEFAULT_MODEL;
+    const r = await fetch(`${BASE}/models/${model}:generateContent`, {
       method: 'POST',
-      headers: {
-        'x-goog-api-key': process.env.GEMINI_API_KEY!,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'x-goog-api-key': rt.apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
       signal: AbortSignal.timeout(90_000),
     });

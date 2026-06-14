@@ -197,6 +197,23 @@ async function migrate() {
     });
   }
 
+  // Per-provider AI config (key / model / enabled), managed from the admin UI
+  // instead of env vars. company_id = null is the platform default; a row with a
+  // company_id is that company's bring-your-own-key override. API keys are stored
+  // AES-256-GCM encrypted (see secrets.ts) in api_key_enc.
+  if (!(await has('provider_configs'))) {
+    await db.schema.createTable('provider_configs', (t) => {
+      t.increments('id');
+      t.integer('company_id').references('companies.id').onDelete('CASCADE'); // null = global/platform
+      t.string('provider').notNullable();
+      t.boolean('enabled').notNullable().defaultTo(true);
+      t.text('api_key_enc'); // AES-256-GCM encrypted; null = no stored key
+      t.string('model');
+      t.timestamp('updated_at').defaultTo(db.fn.now());
+      t.unique(['company_id', 'provider']);
+    });
+  }
+
   // Backfill: every role that can edit documents should also be able to comment,
   // and the immutable Owner role gets the full (now-larger) permission set.
   const roles = await db('roles').select('id', 'name', 'is_system', 'permissions');
