@@ -155,7 +155,7 @@ PASSAGE:
     if (items.length > 3 && items[0].label.trim().toLowerCase() === title.toLowerCase()) items = items.slice(1);
     let best = Array.isArray(j.best) ? j.best.map((b) => String(b).toLowerCase().trim()).filter((b) => TYPES().includes(b)) : [];
     if (!best.length) best = fallbackSpec(text).best;
-    return { title, items, best: best.slice(0, 3) };
+    return { title, items, best: best.slice(0, 4) };
   }
 
   // ---------- slide bullet condensing (deck view + PPTX export) ----------
@@ -255,5 +255,60 @@ TEXT:
     }
   }
 
-  window.GlyphAI = { generate, fallbackSpec, condense, condenseSub, needsCondense, fallbackBullets };
+  // ---------- on-demand reshape: re-tailor the SAME source for a specific diagram type ----------
+  // Some types want a particular content shape; reusing generic items fits them poorly. When the
+  // user switches to one of these, we re-run the AI once, shaping the content for that type.
+  const TYPE_HINTS = {
+    versus: 'exactly TWO contrasting options, head-to-head.',
+    comparison: 'two opposing groups — list one side first, then the other, with balanced counts.',
+    balance: 'two sides being weighed against each other.',
+    proscons: 'the positives first, then the negatives (pros, then cons).',
+    bowtie: 'a few input/cause items, then a few output/effect items.',
+    table: 'each item is an attribute (label) paired with its description (detail); optional metric in value.',
+    rowtable: 'each row pairs a short label with a longer description (detail) and an optional metric (value).',
+    stats: 'every item MUST carry a numeric value (%, count, $); keep 3-4 headline numbers.',
+    gauge: 'each item is a percentage; put it in value like "72%".',
+    gaugerow: '2-4 items, each a percentage value.',
+    donut: 'parts of a whole, each with a numeric value (they can sum to ~100%).',
+    pie: 'parts of a whole, each with a numeric value.',
+    segments: 'a sequence of numeric segments that add up.',
+    waterfall: 'sequential numeric increases/decreases; value = the +/- amount.',
+    timeline: 'ordered chronologically; value = each item’s date/time.',
+    gantt: 'ordered phases; value = a date range or duration.',
+    milestones: 'ordered, numbered phases or achievements.',
+    journey: 'sequential stages of a process, in order.',
+    funnel: 'stages that narrow from a broad top to a narrow bottom, in order.',
+    cone: 'stages narrowing toward one final outcome.',
+    pyramid: 'a hierarchy from a broad base up to a single apex.',
+    matrix: 'exactly 4 items, one per quadrant of a 2x2 grid.',
+  };
+  const reshapeTypes = new Set(Object.keys(TYPE_HINTS));
+
+  const RESHAPE_PROMPT = (text, type, name, hint) => `You turn a passage into the items for a "${name}" diagram.
+Respond with ONLY valid JSON. No markdown, no commentary.
+Schema: {"title":"short title, 3-6 words","items":[{"label":"2-5 word phrase","detail":"supporting phrase, max 9 words or null","value":"short stat/date like 40% or Sep 15, else null","icon":"lucide-icon-name or null"}]}
+Rules:
+- Draw items faithfully from the passage; never invent facts. If the passage lacks what this layout needs (e.g. numbers for a chart), use the closest honest values or null.
+- Shape the content for a ${name} diagram: ${hint}
+- 3-12 items, one coherent set. label = the thing's name; what happened/why goes in detail; a compact stat or date goes in value. "icon" = a real lucide.dev icon name or null.
+PASSAGE:
+"""${String(text).slice(0, 1500)}"""`;
+
+  async function reshape(text, type) {
+    if (!text || !(window.claude && window.claude.complete)) return null;
+    try {
+      const name = (window.DIAGRAMS && window.DIAGRAMS[type] && window.DIAGRAMS[type].name) || type;
+      const hint = TYPE_HINTS[type] || ('a ' + name + ' — keep the items as one coherent set.');
+      const raw = await window.claude.complete(RESHAPE_PROMPT(text, type, name, hint));
+      const m = String(raw).match(/\{[\s\S]*\}/);
+      if (!m) return null;
+      const out = sanitize(JSON.parse(m[0]), text); // reuse the same cleaning/guards
+      return out && out.items && out.items.length >= 3 ? out : null;
+    } catch (e) {
+      console.warn('Glyph AI reshape failed:', e);
+      return null;
+    }
+  }
+
+  window.GlyphAI = { generate, reshape, reshapeTypes, fallbackSpec, condense, condenseSub, needsCondense, fallbackBullets };
 })();

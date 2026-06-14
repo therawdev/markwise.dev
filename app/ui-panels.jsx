@@ -171,17 +171,21 @@
     const loading = picker.phase === 'loading';
     const best = (picker.spec && picker.spec.best) || [];
     const cats = window.TYPE_CATEGORIES || [];
-    const card = (t, i, badge) => (
-      <button key={t + '-' + i} className="opt-card" onClick={() => onInsert(t)}>
-        <div className="opt-head">
-          <span className="opt-name">{window.DIAGRAMS[t].name}</span>
-          {badge ? <span className="badge">{badge}</span> : null}
-        </div>
-        <div className="opt-preview">
-          <window.Diagram visual={{ id: 'pv-' + t, type: t, spec: picker.spec, style, palette: pal }} />
-        </div>
-      </button>
-    );
+    const card = (t, i, badge) => {
+      const sp = (picker.specs && picker.specs[t]) || picker.spec; // content tailored for this type
+      const tailoring = picker.tailoring && picker.tailoring.indexOf(t) !== -1;
+      return (
+        <button key={t + '-' + i} className="opt-card" onClick={() => onInsert(t)}>
+          <div className="opt-head">
+            <span className="opt-name">{window.DIAGRAMS[t].name}</span>
+            {tailoring ? <span className="badge dim">✦ tailoring…</span> : badge ? <span className="badge">{badge}</span> : null}
+          </div>
+          <div className="opt-preview">
+            <window.Diagram visual={{ id: 'pv-' + t, type: t, spec: sp, style, palette: pal }} />
+          </div>
+        </button>
+      );
+    };
     return (
       <div className="overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
         <div className="modal picker" data-screen-label="Visual picker">
@@ -233,7 +237,7 @@
   }
 
   // ---------- edit panel ----------
-  function EditPanel({ visual, onChange, onClose, onExport, onDelete, onRegen, regenBusy, onPreview }) {
+  function EditPanel({ visual, onChange, onClose, onExport, onDelete, onRegen, regenBusy, onTailor, tailorBusy, onPreview }) {
     const preview = onPreview || (() => {});
     const spec = visual.spec;
     const conn = visual.conn || {};
@@ -355,6 +359,11 @@
           ) : null}
         </div>
         <div className="panel-foot">
+          {(visual.source || (visual.spec.items || []).length) && onTailor ? (
+            <button className="ghost-btn" onClick={onTailor} disabled={tailorBusy} title={'Re-tailor the content specifically for a ' + ((window.DIAGRAMS[visual.type] || {}).name || 'this') + ' layout'}>
+              {tailorBusy ? '✦ Tailoring…' : '✦ Tailor content for ' + ((window.DIAGRAMS[visual.type] || {}).name || 'this type')}
+            </button>
+          ) : null}
           {visual.source ? (
             <button className="ghost-btn" onClick={onRegen} disabled={regenBusy}>{regenBusy ? '✦ Rethinking…' : '✦ Regenerate with AI'}</button>
           ) : null}

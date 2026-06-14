@@ -49,6 +49,7 @@
     const [toastMsg, setToastMsg] = useState(null);
     const [hint, setHint] = useState(() => !localStorage.getItem(LS_HINT));
     const [regenBusy, setRegenBusy] = useState(false);
+    const [tailorBusy, setTailorBusy] = useState(false);
     const [space, setSpace] = useState('doc');
     const [previewVar, setPreviewVar] = useState(null);
     useEffect(() => { setPreviewVar(null); }, [selVis]);
@@ -835,18 +836,33 @@
       window.getSelection() && window.getSelection().removeAllRanges();
       setPicker({ phase: 'loading', text, blockId });
       const spec = await window.GlyphAI.generate(text);
-      setPicker((p) => (p && p.text === text ? { ...p, phase: 'ready', spec } : p));
+      const others = (spec.best || []).slice(1, 4).filter((t) => window.DIAGRAMS[t]);
+      setPicker((p) => (p && p.text === text ? { ...p, phase: 'ready', spec, specs: {}, tailoring: others } : p));
+      // each of the other top picks gets its OWN content, shaped for that type (best[0] is already
+      // the AI's tailored pick). They fill in progressively so the picker stays responsive.
+      if (window.GlyphAI && window.GlyphAI.reshape) {
+        others.forEach(async (t) => {
+          const r = await window.GlyphAI.reshape(text, t);
+          setPicker((p) => {
+            if (!p || p.text !== text || p.blockId !== blockId) return p;
+            const specs = { ...(p.specs || {}) };
+            if (r && r.items && r.items.length) specs[t] = { title: r.title, items: r.items, best: spec.best };
+            return { ...p, specs, tailoring: (p.tailoring || []).filter((x) => x !== t) };
+          });
+        });
+      }
     }
     function startGenerate() { if (fab) generateFrom(fab.text, fab.blockId); }
 
     function insertVisual(type) {
       const p = pickerRef.current;
       if (!p || !p.spec) return;
+      const chosen = (p.specs && p.specs[type]) || p.spec; // use the content tailored for this type
       const v = {
         id: uid(), type, style: pickStyle, palette: pickPal,
         conn: {}, layout: {}, notes: [],
         source: p.text,
-        spec: JSON.parse(JSON.stringify({ title: p.spec.title, items: p.spec.items, best: p.spec.best })),
+        spec: JSON.parse(JSON.stringify({ title: chosen.title, items: chosen.items, best: p.spec.best })),
       };
       setBlocks((bs) => {
         const i = bs.findIndex((b) => b.id === p.blockId);
@@ -913,6 +929,25 @@
       patchVisual(selVisual.id, { spec: { title: spec.title, items: spec.items, best: spec.best }, layout: {} });
       setRegenBusy(false);
       toast('Visual regenerated');
+    }
+    // re-tailor the SAME content specifically for the current diagram type (on-demand reshape)
+    async function tailorVisual() {
+      if (!selVisual || tailorBusy || !(window.GlyphAI && window.GlyphAI.reshape)) return;
+      const src = selVisual.source || (selVisual.spec.items || []).map((it) => (it.label || '') + (it.detail ? ': ' + it.detail : '') + (it.value ? ' (' + it.value + ')' : '')).join('\n');
+      if (!src) return;
+      const type = selVisual.type;
+      setTailorBusy(true);
+      try {
+        const out = await window.GlyphAI.reshape(src, type);
+        if (out && out.items && out.items.length) {
+          patchVisual(selVisual.id, { spec: { title: out.title || selVisual.spec.title, items: out.items, best: selVisual.spec.best }, layout: {} });
+          toast('Content tailored for ' + ((window.DIAGRAMS[type] || {}).name || type));
+        } else {
+          toast('Could not tailor — kept current content');
+        }
+      } finally {
+        setTailorBusy(false);
+      }
     }
 
     async function resetDoc() {
@@ -1092,6 +1127,8 @@
               onDelete={() => deleteVisualBlock(blocks.find((b) => b.kind === 'visual' && b.visual.id === selVisual.id).id)}
               onRegen={regen}
               regenBusy={regenBusy}
+              onTailor={tailorVisual}
+              tailorBusy={tailorBusy}
             />
           ) : null}
           {showComments && space === 'doc' && GC ? (
