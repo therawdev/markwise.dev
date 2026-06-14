@@ -21,7 +21,7 @@
       const variant = spec.variant || 'snake';
       const rows = variant === 'row' ? 1 : Math.max(1, Math.ceil(n / 4));
       const cols = Math.ceil(n / rows);
-      const gap = 52, boxH = 84, rowGap = 56;
+      const gap = 52, boxH = 100, rowGap = 50;
       const bw = (W - 48 - (cols - 1) * gap) / cols;
       const els = [t.el];
       const pos = [];
@@ -34,12 +34,13 @@
         const y = t.y0 + r * (boxH + rowGap);
         pos.push({ x, y, r, col });
         const solid = i === 0;
+        // icon sits centered above the label so it never overlaps the (centered) text
         els.push(
           <g key={'it' + i}>
             {D.box(x, y, bw, boxH, { fill: solid ? c.p : c.soft, stroke: c.p, rx: 10 })}
-            {I.draw(x + 20, y + 20, 20, I.nameFor(it), solid ? '#fff' : c.deep, 2)}
-            {D.ctext(x + bw / 2, y + boxH / 2 - (it.detail ? 9 : 0) + 8, it.label, { size: 14.5, weight: 600, fill: solid ? '#fff' : c.deep, maxW: bw - 18, maxLines: 2 })}
-            {it.detail ? D.ctext(x + bw / 2, y + boxH / 2 + 22 + 8, it.detail, { size: 11, fill: solid ? 'rgba(255,255,255,0.78)' : GREY, maxW: bw - 18, maxLines: 1 }) : null}
+            {I.draw(x + bw / 2, y + 21, 21, I.nameFor(it), solid ? '#fff' : c.deep, 2)}
+            {D.ctext(x + bw / 2, y + (it.detail ? 54 : 60), it.label, { size: 14, weight: 600, fill: solid ? '#fff' : c.deep, maxW: bw - 18, maxLines: 2 })}
+            {it.detail ? D.ctext(x + bw / 2, y + 82, it.detail, { size: 10.5, fill: solid ? 'rgba(255,255,255,0.78)' : GREY, maxW: bw - 18, maxLines: 1 }) : null}
           </g>
         );
       });

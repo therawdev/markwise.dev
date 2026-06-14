@@ -710,11 +710,18 @@
       const lastEl = document.querySelector('.sheet [data-block-id="' + (sec.barLast || sec.barFirst || sec.ids[0]) + '"]');
       const fr = (firstEl || el).getBoundingClientRect();
       const lr = (lastEl || el).getBoundingClientRect();
+      // keep the gutter ✦ and the accent bar below the navbar and within the section's text band,
+      // so scrolling a long section doesn't drag the icon up over (and past) the topbar
+      const topbar = document.querySelector('.topbar');
+      const navBottom = topbar ? topbar.getBoundingClientRect().bottom : 54;
+      const lowB = navBottom + 8;
+      const barTop = Math.max(fr.top, navBottom);
+      const icoTop = Math.min(Math.max(r.top + 2, lowB), Math.max(lowB, lr.bottom - 30));
       setSecFab({
         key: sec.key,
-        top: Math.round(r.top + 2),
+        top: Math.round(icoTop),
         left: Math.round(Math.max(12, sr.left - 46)),
-        bar: { top: Math.round(fr.top), height: Math.max(0, Math.round(lr.bottom - fr.top)), left: Math.round(sr.left) },
+        bar: { top: Math.round(barTop), height: Math.max(0, Math.round(lr.bottom - barTop)), left: Math.round(sr.left) },
         sec,
       });
     }, []);

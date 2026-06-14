@@ -351,16 +351,21 @@
         const maxChars = Math.max(3, Math.floor(maxW / (fsz(size) * CW)));
         return wrapWords(str, maxChars, maxLines || 2);
       },
-      // wrap, shrinking the font progressively; never truncate with an ellipsis
+      // wrap, shrinking the font progressively so the text fits the box — including a single word
+      // longer than the column (which previously overflowed the box edge instead of shrinking)
       fitLines(str, size, maxW, maxLines) {
-        let best = null;
+        const ml = maxLines || 2;
+        const mcAt = (sz) => Math.max(3, Math.floor(maxW / (fsz(sz) * CW)));
         for (const mul of [1, 0.9, 0.82, 0.74, 0.66, 0.58]) {
-          const ls = api.lines(str, size * mul, maxW, maxLines);
-          best = { mul, ls };
-          if (!String(ls[ls.length - 1]).endsWith('…')) return best;
+          const mc = mcAt(size * mul);
+          const ls = wrapWords(str, mc, ml);
+          const overflows = ls.some((l) => String(l).length > mc); // a word wider than the column
+          if (!overflows && !String(ls[ls.length - 1]).endsWith('…')) return { mul, ls };
         }
-        // still doesn't fit: keep the smallest size but wrap fully (no line cap, no ellipsis)
-        return { mul: 0.58, ls: api.lines(str, size * 0.58, maxW, 99) };
+        // smallest size still overflows: truncate the over-long line so nothing spills outside the box
+        const mc = mcAt(size * 0.58);
+        const ls = wrapWords(str, mc, 99).map((l) => (String(l).length > mc ? String(l).slice(0, Math.max(1, mc - 1)) + '…' : l));
+        return { mul: 0.58, ls };
       },
       text(x, y, str, o) {
         o = o || {};
