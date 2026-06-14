@@ -60,6 +60,9 @@
     const [reqStatus, setReqStatus] = useState('');  // '' | 'ok' | 'error'
     const [aiReqDetail, setAiReqDetail] = useState(null); // full row in the viewer
     const [usage, setUsage] = useState(null); // global AI usage summary
+    const [usageErr, setUsageErr] = useState('');
+    const [reqErr, setReqErr] = useState('');
+    const [quotaErr, setQuotaErr] = useState('');
 
     // monthly AI quotas
     const [quotas, setQuotas] = useState(null);      // { free_monthly, pro_monthly, user_monthly }
@@ -99,11 +102,27 @@
 
     useEffect(() => { loadAll(); }, [loadAll]);
 
+    // Loaders for the lazy tabs — surface failures (toast + inline error) instead
+    // of swallowing them, so a failed fetch can't pin the panel on "Loading…" forever.
+    const loadReqs = () => {
+      setReqErr('');
+      return API.get('/api/admin/ai-requests' + (reqStatus ? '?status=' + reqStatus : ''))
+        .then(setAiReqs).catch((e) => { setReqErr(e.message || 'Failed to load the AI request log.'); toast(e.message); });
+    };
+    const loadUsage = () => {
+      setUsageErr('');
+      return API.get('/api/admin/ai-usage').then(setUsage).catch((e) => { setUsageErr(e.message || 'Failed to load AI usage.'); toast(e.message); });
+    };
+    const loadQuotas = () => {
+      setQuotaErr('');
+      return API.get('/api/admin/quotas').then((q) => { setQuotas(q); setQuotaDraft(q); }).catch((e) => { setQuotaErr(e.message || 'Failed to load quotas.'); toast(e.message); });
+    };
+
     // Lazy-load AI log / usage / quotas only when their tab is open.
     useEffect(() => {
-      if (tab === 'ailogs') API.get('/api/admin/ai-requests' + (reqStatus ? '?status=' + reqStatus : '')).then(setAiReqs).catch(() => {});
-      if (tab === 'usage') API.get('/api/admin/ai-usage').then(setUsage).catch(() => {});
-      if (tab === 'quotas') API.get('/api/admin/quotas').then((q) => { setQuotas(q); setQuotaDraft(q); }).catch(() => {});
+      if (tab === 'ailogs') loadReqs();
+      if (tab === 'usage') loadUsage();
+      if (tab === 'quotas') loadQuotas();
     }, [tab, reqStatus]);
 
     const saveQuotas = async () => {
@@ -283,7 +302,7 @@
           <MWTabs tabs={tabs} value={tab} onChange={setTab} />
 
           {loading ? (
-            <div className="state" style={{ textAlign: 'center', padding: '60px 0', color: 'var(--grey)' }}>Loading…</div>
+            <div className="page-loading">Loading…</div>
           ) : null}
 
           {!loading && tab === 'overview' ? (
@@ -362,10 +381,10 @@
               </div>
 
               {provData ? (
-                <div style={{ marginTop: 18 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                <div className="prov-keys">
+                  <div className="prov-keys-head">
                     <b>Provider keys &amp; models</b>
-                    <small style={{ color: provData.secretsConfigured ? '#7a756c' : '#b4462f' }}>
+                    <small className={provData.secretsConfigured ? 'dim' : 'result-note err'}>
                       {provData.secretsConfigured ? 'Stored AES-256-GCM encrypted in the database.' : 'SECRETS_KEY not set on the server — keys can’t be stored yet.'}
                     </small>
                   </div>
@@ -375,44 +394,44 @@
                     const tr = provTest[c.provider];
                     const modelVal = modelDrafts[c.provider] !== undefined ? modelDrafts[c.provider] : (c.model || '');
                     return (
-                      <div key={c.provider} className="card" style={{ padding: '12px 14px', marginBottom: 8 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <div key={c.provider} className="card pad prov-key">
+                        <div className="prov-key-head">
                           <b>{label}</b>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <small style={{ color: '#7a756c' }}>{c.enabled ? 'enabled' : 'disabled'}</small>
+                          <span className="prov-key-toggle">
+                            <small className="dim">{c.enabled ? 'enabled' : 'disabled'}</small>
                             <MWSwitch on={c.enabled} onChange={() => saveProvider(c.provider, { enabled: !c.enabled })} />
                           </span>
                         </div>
                         {c.needsKey ? (
-                          <div style={{ marginBottom: 8 }}>
-                            <label style={{ fontSize: 11, color: '#7a756c', display: 'block', marginBottom: 3 }}>
+                          <div className="prov-key-field">
+                            <label className="fld-label">
                               API key — {c.hasKey ? `set (${c.keyMasked}, source: ${c.keySource})` : `none (source: ${c.keySource})`}
                             </label>
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              <input className="fld" type="password" style={{ flex: 1 }}
+                            <div className="field-row">
+                              <input className="fld" type="password"
                                 placeholder={c.hasKey ? 'Enter a new key to replace' : 'Paste API key'}
                                 value={keyDrafts[c.provider] || ''}
                                 onChange={(e) => setKeyDrafts((d) => ({ ...d, [c.provider]: e.target.value }))}
                                 disabled={!provData.secretsConfigured} />
-                              <button className="btn sm" disabled={busy || !keyDrafts[c.provider]} onClick={() => saveProvider(c.provider, { apiKey: keyDrafts[c.provider] })}>Save key</button>
+                              <button className="secondary-btn" disabled={busy || !keyDrafts[c.provider]} onClick={() => saveProvider(c.provider, { apiKey: keyDrafts[c.provider] })}>Save key</button>
                               {c.hasKey && c.keySource !== 'env' ? (
-                                <button className="btn sm ghost" disabled={busy} onClick={() => saveProvider(c.provider, { apiKey: '' })}>Clear</button>
+                                <button className="ghost-btn" disabled={busy} onClick={() => saveProvider(c.provider, { apiKey: '' })}>Clear</button>
                               ) : null}
                             </div>
                           </div>
                         ) : (
-                          <div style={{ fontSize: 11, color: '#7a756c', marginBottom: 8 }}>CLI-based — no API key needed.</div>
+                          <div className="dim sm-note prov-key-field">CLI-based — no API key needed.</div>
                         )}
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          <input className="fld" style={{ flex: 1 }} placeholder="model (default if blank)" value={modelVal}
+                        <div className="field-row">
+                          <input className="fld" placeholder="model (default if blank)" value={modelVal}
                             onChange={(e) => setModelDrafts((d) => ({ ...d, [c.provider]: e.target.value }))} />
-                          <button className="btn sm" disabled={busy} onClick={() => saveProvider(c.provider, { model: modelVal })}>Save model</button>
-                          <button className="btn sm ghost" disabled={busy} onClick={() => testProvider(c.provider)}>{busy ? 'Testing…' : 'Test'}</button>
+                          <button className="secondary-btn" disabled={busy} onClick={() => saveProvider(c.provider, { model: modelVal })}>Save model</button>
+                          <button className="ghost-btn" disabled={busy} onClick={() => testProvider(c.provider)}>{busy ? 'Testing…' : 'Test'}</button>
                         </div>
                         {tr ? (
-                          <small style={{ display: 'block', marginTop: 6, color: tr.ok ? '#2f8a4e' : '#b4462f' }}>
+                          <div className={'result-note ' + (tr.ok ? 'ok' : 'err')}>
                             {tr.ok ? '✓ ' + (tr.sample || 'OK') : '✗ ' + (tr.reason || 'failed')}
-                          </small>
+                          </div>
                         ) : null}
                       </div>
                     );
@@ -424,7 +443,7 @@
 
           {!loading && tab === 'usage' ? (
             <MWSection title="AI usage" sub="Requests, tokens & estimated cost across the whole platform.">
-              <MWUsage usage={usage} />
+              <MWUsage usage={usage} error={usageErr} onRetry={loadUsage} />
             </MWSection>
           ) : null}
 
@@ -433,7 +452,9 @@
               title="Monthly AI quotas"
               sub="Hard limit on successful AI generations per calendar month. 0 = unlimited. App owners are always exempt. This is on top of the per-minute burst rate limit."
             >
-              {!quotaDraft ? (
+              {quotaErr ? (
+                <div className="card empty-note">{quotaErr} · <button className="ghost-btn sm" onClick={loadQuotas}>Retry</button></div>
+              ) : !quotaDraft ? (
                 <div className="card empty-note">Loading…</div>
               ) : (
                 <div className="card pad">
@@ -475,25 +496,27 @@
               }
             >
               <div className="card">
-                {!aiReqs ? (
+                {reqErr ? (
+                  <div className="empty-note">{reqErr} · <button className="ghost-btn sm" onClick={loadReqs}>Retry</button></div>
+                ) : !aiReqs ? (
                   <div className="empty-note">Loading…</div>
                 ) : aiReqs.rows.length === 0 ? (
                   <div className="empty-note">No AI requests logged yet.</div>
                 ) : (
-                  <table className="tbl">
+                  <table className="tbl rows-link">
                     <thead>
-                      <tr><th>Time</th><th>User</th><th>Provider</th><th>Model</th><th>Status</th><th>ms</th><th>Prompt</th></tr>
+                      <tr><th>Time</th><th>User</th><th>Provider</th><th>Model</th><th>Status</th><th className="num">ms</th><th>Prompt</th></tr>
                     </thead>
                     <tbody>
                       {aiReqs.rows.map((r) => (
-                        <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => openReq(r.id)}>
-                          <td>{new Date(r.created_at).toLocaleString()}</td>
-                          <td>{r.user_email || '—'}</td>
-                          <td>{r.provider}{r.failover ? ' ↩' : ''}</td>
-                          <td>{r.model || '—'}</td>
-                          <td><b style={{ color: r.status === 'ok' ? '#2f8a4e' : '#b4462f' }}>{r.status}</b></td>
-                          <td>{r.latency_ms != null ? r.latency_ms : '—'}</td>
-                          <td style={{ color: '#7a756c', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.error || r.prompt_preview || ''}</td>
+                        <tr key={r.id} onClick={() => openReq(r.id)}>
+                          <td className="dim nowrap">{new Date(r.created_at).toLocaleString()}</td>
+                          <td className="nowrap">{r.user_email || '—'}</td>
+                          <td className="nowrap">{mwProviderLabel(r.provider)}{r.failover ? <span className="dim" title="answered after failover"> ↩</span> : null}</td>
+                          <td className="dim">{r.model || '—'}</td>
+                          <td><MWPill tone={r.status === 'ok' ? 'green' : 'red'}>{r.status}</MWPill></td>
+                          <td className="num dim">{r.latency_ms != null ? r.latency_ms : '—'}</td>
+                          <td className="dim cell-clip">{r.error || r.prompt_preview || ''}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -507,20 +530,20 @@
           ) : null}
 
           {aiReqDetail ? (
-            <div onClick={() => setAiReqDetail(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(20,18,15,.45)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-              <div className="card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 760, width: '100%', maxHeight: '86vh', overflow: 'auto', padding: 18 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+            <div className="modal-overlay" onClick={() => setAiReqDetail(null)}>
+              <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-head">
                   <b>AI request #{aiReqDetail.id}</b>
-                  <button className="btn sm ghost" onClick={() => setAiReqDetail(null)}>Close</button>
+                  <button className="ghost-btn sm" onClick={() => setAiReqDetail(null)}>Close</button>
                 </div>
-                <div style={{ fontSize: 12, color: '#7a756c', marginBottom: 12 }}>
-                  {new Date(aiReqDetail.created_at).toLocaleString()} · {aiReqDetail.provider}{aiReqDetail.model ? ' / ' + aiReqDetail.model : ''} · {aiReqDetail.status}{aiReqDetail.latency_ms != null ? ' · ' + aiReqDetail.latency_ms + 'ms' : ''}{aiReqDetail.user_email ? ' · ' + aiReqDetail.user_email : ''}
+                <div className="modal-meta">
+                  {new Date(aiReqDetail.created_at).toLocaleString()} · {mwProviderLabel(aiReqDetail.provider)}{aiReqDetail.model ? ' / ' + aiReqDetail.model : ''} · {aiReqDetail.status}{aiReqDetail.latency_ms != null ? ' · ' + aiReqDetail.latency_ms + ' ms' : ''}{aiReqDetail.user_email ? ' · ' + aiReqDetail.user_email : ''}
                 </div>
-                {aiReqDetail.error ? <div style={{ color: '#b4462f', marginBottom: 12 }}>{aiReqDetail.error}</div> : null}
-                <label style={{ fontSize: 11, fontWeight: 700, color: '#7a756c' }}>PROMPT</label>
-                <pre style={{ whiteSpace: 'pre-wrap', background: '#faf8f4', border: '1px solid #eee', borderRadius: 8, padding: 10, fontSize: 12, margin: '4px 0 12px' }}>{aiReqDetail.prompt || ''}</pre>
-                <label style={{ fontSize: 11, fontWeight: 700, color: '#7a756c' }}>RESPONSE</label>
-                <pre style={{ whiteSpace: 'pre-wrap', background: '#faf8f4', border: '1px solid #eee', borderRadius: 8, padding: 10, fontSize: 12, margin: '4px 0 0' }}>{aiReqDetail.response || '(none)'}</pre>
+                {aiReqDetail.error ? <div className="result-note err">{aiReqDetail.error}</div> : null}
+                <label className="fld-label">Prompt</label>
+                <pre className="code-block">{aiReqDetail.prompt || ''}</pre>
+                <label className="fld-label">Response</label>
+                <pre className="code-block">{aiReqDetail.response || '(none)'}</pre>
               </div>
             </div>
           ) : null}

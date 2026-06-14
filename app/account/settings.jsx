@@ -43,6 +43,7 @@
     const [keysLoaded, setKeysLoaded] = useState(false);
     const [newlyCreatedToken, setNewlyCreatedToken] = useState(null); // {id, fullToken}
     const [usage, setUsage] = useState(null); // this user's AI usage
+    const [usageErr, setUsageErr] = useState('');
 
     // load api keys count for nav badge on mount
     useEffect(() => {
@@ -53,8 +54,12 @@
     }, []);
 
     // lazy-load the user's own AI usage when that pane opens
+    const loadUsage = () => {
+      setUsageErr('');
+      return window.MarkwiseAPI.get('/api/ai/usage').then(setUsage).catch((e) => { setUsageErr(e.message || 'Failed to load AI usage.'); toast(e.message); });
+    };
     useEffect(() => {
-      if (pane === 'usage' && !usage) window.MarkwiseAPI.get('/api/ai/usage').then(setUsage).catch(() => {});
+      if (pane === 'usage' && !usage) loadUsage();
     }, [pane]);
 
     const profileDirty = name.trim() !== me.name || email.trim().toLowerCase() !== me.email;
@@ -298,7 +303,7 @@
 
               {pane === 'usage' ? (
                 <MWSection title="AI usage" sub="Your AI requests, tokens & estimated cost.">
-                  <MWUsage usage={usage} />
+                  <MWUsage usage={usage} error={usageErr} onRetry={loadUsage} />
                 </MWSection>
               ) : null}
 

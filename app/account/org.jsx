@@ -187,6 +187,7 @@
     const [inviteRoleId, setInviteRoleId] = useState(null);
     const [coName, setCoName] = useState('');
     const [usage, setUsage] = useState(null); // this company's AI usage
+    const [usageErr, setUsageErr] = useState('');
 
     const load = () => {
       setLoading(true); setLoadErr(null);
@@ -213,7 +214,8 @@
       API.get('/api/orgs/' + companyId + '/invites').then(setInvites).catch(() => {});
     };
     useEffect(() => { if (org && tab === 'members') loadInvites(); }, [org, tab]);
-    useEffect(() => { if (org && tab === 'usage') API.get('/api/orgs/' + companyId + '/ai-usage').then(setUsage).catch(() => {}); }, [org, tab]);
+    const loadUsage = () => { setUsageErr(''); return API.get('/api/orgs/' + companyId + '/ai-usage').then(setUsage).catch((e) => { setUsageErr(e.message || 'Failed to load AI usage.'); toast(e.message); }); };
+    useEffect(() => { if (org && tab === 'usage') loadUsage(); }, [org, tab]);
 
     if (loading) {
       return (
@@ -544,7 +546,7 @@
           {/* ===== AI USAGE TAB ===== */}
           {tab === 'usage' ? (
             <MWSection title="AI usage" sub="This company's AI requests, tokens & estimated cost.">
-              <MWUsage usage={usage} />
+              <MWUsage usage={usage} error={usageErr} onRetry={loadUsage} />
             </MWSection>
           ) : null}
 
@@ -740,18 +742,18 @@
             const modelVal = modelDrafts[c.provider] !== undefined ? modelDrafts[c.provider] : (c.model || '');
             const usingOwn = c.keySource === 'company';
             return (
-              <div key={c.provider} className="card pad" style={{ marginBottom: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <b>{c.provider}</b>
+              <div key={c.provider} className="card pad prov-key">
+                <div className="prov-key-head">
+                  <b>{mwProviderLabel(c.provider)}</b>
                   <MWPill tone={usingOwn ? 'green' : 'grey'}>{usingOwn ? 'Using your key' : (c.hasKey ? 'Using platform key' : 'No key')}</MWPill>
                 </div>
                 {c.needsKey ? (
-                  <div style={{ marginBottom: 8 }}>
-                    <label className="fld-label" style={{ fontSize: 11 }}>
+                  <div className="prov-key-field">
+                    <label className="fld-label">
                       API key — {usingOwn ? 'your key set (' + c.keyMasked + ')' : (c.hasKey ? 'falling back to the platform key' : 'none set')}
                     </label>
-                    <div className="inline-form">
-                      <input className="fld" type="password" style={{ flex: 1 }}
+                    <div className="field-row">
+                      <input className="fld" type="password"
                         placeholder={usingOwn ? 'Enter a new key to replace yours' : 'Paste your API key'}
                         value={keyDrafts[c.provider] || ''}
                         onChange={(e) => setKeyDrafts((d) => ({ ...d, [c.provider]: e.target.value }))} />
@@ -762,16 +764,16 @@
                     </div>
                   </div>
                 ) : (
-                  <div className="dim sm-note" style={{ marginBottom: 8 }}>CLI-based provider — no API key needed.</div>
+                  <div className="dim sm-note prov-key-field">CLI-based provider — no API key needed.</div>
                 )}
-                <div className="inline-form">
-                  <input className="fld" style={{ flex: 1 }} placeholder="model (platform default if blank)" value={modelVal}
+                <div className="field-row">
+                  <input className="fld" placeholder="model (platform default if blank)" value={modelVal}
                     onChange={(e) => setModelDrafts((d) => ({ ...d, [c.provider]: e.target.value }))} />
                   <button className="secondary-btn" disabled={busyNow} onClick={() => save(c.provider, { model: modelVal })}>Save model</button>
                   <button className="ghost-btn" disabled={busyNow} onClick={() => runTest(c.provider)}>{busyNow ? 'Testing…' : 'Test'}</button>
                 </div>
                 {tr ? (
-                  <div className="sm-note" style={{ marginTop: 6, color: tr.ok ? '#2f8a4e' : '#b4462f' }}>
+                  <div className={'result-note ' + (tr.ok ? 'ok' : 'err')}>
                     {tr.ok ? '✓ ' + (tr.sample || 'OK') : '✗ ' + (tr.reason || 'failed')}
                   </div>
                 ) : null}

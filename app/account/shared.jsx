@@ -294,35 +294,78 @@
     );
   }
 
-  // Shared AI-usage panel (admin global / company / individual scopes).
-  function MWUsage({ usage }) {
-    if (!usage) return <div className="card"><div className="empty-note">Loading…</div></div>;
-    const t = usage.totals || {};
-    const num = (n) => Number(n || 0).toLocaleString();
-    const cards = [
-      ['Requests', num(t.requests)],
-      ['Success', t.requests ? Math.round((100 * t.ok) / t.requests) + '%' : '—'],
-      ['Input tokens', num(t.input_tokens)],
-      ['Output tokens', num(t.output_tokens)],
-      ['Est. cost', '$' + Number(t.est_cost_usd || 0).toFixed(4)],
-      ['Avg latency', (t.avg_latency_ms || 0) + 'ms'],
-    ];
+  const MW_PROVIDER_LABELS = {
+    gemini: 'Google Gemini',
+    codex: 'OpenAI Codex SDK',
+    claude: 'Claude SDK / Claude API',
+    claude_code: 'Claude Code (headless CLI)',
+  };
+  function mwProviderLabel(id) { return MW_PROVIDER_LABELS[id] || id; }
+
+  // 14-day request trend, rendered as the shared design-system bar chart.
+  function MWUsageChart({ daily }) {
+    const days = Array.from({ length: 14 }, (_, i) => {
+      const dt = new Date(Date.now() - (13 - i) * 864e5);
+      return { key: dt.toISOString().slice(0, 10), label: dt.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }), n: 0 };
+    });
+    (daily || []).forEach((r) => {
+      const d = days.find((x) => x.key === String(r.day || '').slice(0, 10));
+      if (d) d.n = r.requests || 0;
+    });
+    const max = Math.max(1, ...days.map((d) => d.n));
+    const total = days.reduce((s, d) => s + d.n, 0);
     return (
-      <React.Fragment>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10, marginBottom: 14 }}>
-          {cards.map(([k, v]) => (
-            <div key={k} className="card" style={{ padding: '12px 14px' }}>
-              <div style={{ fontSize: 10.5, color: '#7a756c', textTransform: 'uppercase', letterSpacing: '.5px' }}>{k}</div>
-              <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{v}</div>
+      <div className="card chart-card">
+        <div className="chart-head"><b>Requests — last 14 days</b><span className="dim">{total} total</span></div>
+        <div className="chart">
+          {days.map((d, i) => (
+            <div key={i} className="col" title={d.label + ' · ' + d.n + ' requests'}>
+              <i style={{ height: Math.max(4, Math.round(d.n / max * 100)) + '%' }}></i>
+              <span>{i % 3 === 0 ? d.label : ''}</span>
             </div>
           ))}
         </div>
+      </div>
+    );
+  }
+
+  // Shared AI-usage panel (admin global / company / individual scopes).
+  function MWUsage({ usage, error, onRetry }) {
+    if (error) return (
+      <div className="card"><div className="empty-note">
+        {error}{onRetry ? <React.Fragment> · <button className="ghost-btn sm" onClick={onRetry}>Retry</button></React.Fragment> : null}
+      </div></div>
+    );
+    if (!usage) return <div className="card"><div className="empty-note">Loading…</div></div>;
+    const t = usage.totals || {};
+    const num = (n) => Number(n || 0).toLocaleString();
+    const okPct = t.requests ? Math.round((100 * t.ok) / t.requests) : null;
+    const cards = [
+      ['Requests', num(t.requests)],
+      ['Success', okPct == null ? '—' : okPct + '%'],
+      ['Input tokens', num(t.input_tokens)],
+      ['Output tokens', num(t.output_tokens)],
+      ['Est. cost', '$' + Number(t.est_cost_usd || 0).toFixed(4)],
+      ['Avg latency', (t.avg_latency_ms || 0) + ' ms'],
+    ];
+    const hasDaily = (usage.daily || []).some((d) => (d.requests || 0) > 0);
+    return (
+      <div className="mw-usage">
+        <div className="stat-grid auto">
+          {cards.map(([k, v]) => (
+            <div key={k} className="card stat-card">
+              <div className="stat-num">{v}</div>
+              <div className="stat-label">{k}</div>
+            </div>
+          ))}
+        </div>
+        {hasDaily ? <MWUsageChart daily={usage.daily} /> : null}
         {(usage.byProvider || []).length ? (
-          <div className="card" style={{ marginBottom: 12 }}>
+          <div className="card">
             <table className="tbl">
-              <thead><tr><th>Provider</th><th>Requests</th><th>OK</th><th>Input tok</th><th>Output tok</th></tr></thead>
+              <thead><tr><th>Provider</th><th className="num">Requests</th><th className="num">OK</th><th className="num">Input tok</th><th className="num">Output tok</th></tr></thead>
               <tbody>{usage.byProvider.map((p) => (
-                <tr key={p.provider}><td>{p.provider}</td><td>{p.requests}</td><td>{p.ok}</td><td>{num(p.input_tokens)}</td><td>{num(p.output_tokens)}</td></tr>
+                <tr key={p.provider}><td>{mwProviderLabel(p.provider)}</td><td className="num">{num(p.requests)}</td><td className="num">{num(p.ok)}</td><td className="num">{num(p.input_tokens)}</td><td className="num">{num(p.output_tokens)}</td></tr>
               ))}</tbody>
             </table>
           </div>
@@ -330,19 +373,19 @@
         {(usage.byModel || []).length ? (
           <div className="card">
             <table className="tbl">
-              <thead><tr><th>Model</th><th>Requests</th><th>Input tok</th><th>Output tok</th><th>Est. cost</th></tr></thead>
+              <thead><tr><th>Model</th><th className="num">Requests</th><th className="num">Input tok</th><th className="num">Output tok</th><th className="num">Est. cost</th></tr></thead>
               <tbody>{usage.byModel.map((m) => (
-                <tr key={m.model}><td>{m.model}</td><td>{m.requests}</td><td>{num(m.input_tokens)}</td><td>{num(m.output_tokens)}</td><td>${Number(m.est_cost_usd || 0).toFixed(4)}</td></tr>
+                <tr key={m.model}><td>{m.model}</td><td className="num">{num(m.requests)}</td><td className="num">{num(m.input_tokens)}</td><td className="num">{num(m.output_tokens)}</td><td className="num">${Number(m.est_cost_usd || 0).toFixed(4)}</td></tr>
               ))}</tbody>
             </table>
           </div>
         ) : null}
-      </React.Fragment>
+      </div>
     );
   }
 
   Object.assign(window, {
-    MWTopbar, MWBell, MWPalette, MWPill, MWSection, MWTabs, MWSwitch, MWAvatar, MWConfirmDelete, MWUsage,
-    mwHueFor, mwAgo, mwFmtDate, mwFmtWhen, mwCopy, mwDetail, MW_ACTION_LABELS,
+    MWTopbar, MWBell, MWPalette, MWPill, MWSection, MWTabs, MWSwitch, MWAvatar, MWConfirmDelete, MWUsage, MWUsageChart,
+    mwHueFor, mwAgo, mwFmtDate, mwFmtWhen, mwCopy, mwDetail, mwProviderLabel, MW_ACTION_LABELS, MW_PROVIDER_LABELS,
   });
 })();
