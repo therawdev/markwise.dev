@@ -14,6 +14,17 @@ _(nothing currently)_
 
 ---
 
+## Platform — deferred (see ROADMAP.md)
+
+- ✨ **[L] SAML 2.0 SSO** — per-org SP metadata + ACS endpoint, IdP metadata import,
+  attribute → role mapping. Deferred from P2 (OIDC ships first); add when an
+  enterprise customer requires it. Build the P2 auth layer provider-agnostic so it
+  slots in without a rewrite.
+- ✨ **[L] SCIM 2.0 provisioning** — auto create/update/deactivate users & groups
+  from the IdP; token-protected endpoints. Pairs with SSO; deferred with SAML.
+
+---
+
 ## Features — planned
 
 ### ✨ [L] Stage 2 — Live co-editing (CRDT) — the big one
