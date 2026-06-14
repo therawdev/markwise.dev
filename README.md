@@ -1,7 +1,7 @@
 # Markwise — Write. Visualize. Present.
 
 Turn text into visuals. Markwise is a document editor where you highlight a passage
-and AI turns it into a diagram — ~70 diagram types, 26 render styles, a freeform
+and AI turns it into a diagram — ~90 diagram types, 26 render styles, a freeform
 canvas board, a presentation builder with 200+ slide layouts, and export to
 PNG / SVG / PDF / Word / Markdown / PPTX.
 
@@ -20,8 +20,10 @@ application-owner admin panel, and a pluggable AI provider layer.
 | ![Editor](assets/screenshots/editor.png) | ![Canvas](assets/screenshots/canvas.png) |
 | **Presentation builder** | **Dashboard** |
 | ![Present](assets/screenshots/present.png) | ![Dashboard](assets/screenshots/dashboard.png) |
-| **Application-owner admin panel** | |
-| ![Admin](assets/screenshots/admin.png) | |
+| **Application-owner admin panel** | **A diagram, up close** |
+| ![Admin](assets/screenshots/admin.png) | ![Diagram](assets/screenshots/diagram.png) |
+| **AI provider keys & models** — stored encrypted, set from the UI | **AI request log** — every prompt & response, for review |
+| ![Provider keys & models](assets/screenshots/admin-providers.png) | ![AI request log](assets/screenshots/admin-ai-logs.png) |
 
 ## Quick start
 
@@ -64,21 +66,26 @@ admin) and `CODEX_AUTH_JSON` (Codex CLI auth — rotate anytime by re-running
 ## Features
 
 - **Editor** — write a doc, select text, hit ✦ Visualize; pick from live diagram
-  previews; click any element to recolor, resize, or edit it in place
+  previews; click any element to recolor, **move, scale, or rotate** it (text and
+  per-item icons alike), and tailor a visual's content to the diagram type
 - **Canvas** — every visual as a draggable card on a pannable, zoomable board
 - **Present** — build a deck from the document; 50 themes, 200+ slide layouts,
   full-screen present mode, PPTX/PDF export
 - **Companies & RBAC** — default Owner/User roles plus custom roles with
   per-permission checkboxes; single-use invite links
-- **Admin panel** — users, companies, AI usage, audit log, AI provider switch
+- **Admin panel** — users, companies, AI usage, audit log, the active-provider
+  switch, plus **per-provider API keys & models stored AES-256-GCM encrypted in
+  the DB and managed from the UI**, and a full **AI request log** (every prompt,
+  response, provider, model, status & latency) for review and prompt improvement
 - **AI providers** — Google Gemini via REST (default), OpenAI Codex SDK, Claude
-  Code headless CLI, and Claude SDK/API (gated by a policy toggle). The active
-  provider is switchable in the admin panel, with automatic failover. No key?
-  The built-in offline parser still generates diagrams deterministically.
+  Code headless CLI, and Claude SDK/API (gated by a policy toggle). Keys & models
+  are set in the admin panel (encrypted at rest) with env vars as fallback; the
+  active provider is switchable, with automatic failover. No key? The built-in
+  offline parser still generates diagrams deterministically.
 
 ## Development
 
 See [CLAUDE.md](CLAUDE.md) for architecture, conventions, and the RBAC model, and
 [DIAGRAM-TERMINOLOGY.md](DIAGRAM-TERMINOLOGY.md) for the diagram component vocabulary
-and layout-variant naming reference. The original Claude Design handoff bundle is
-preserved in `chats/` and `project/`.
+and layout-variant naming reference. The platform roadmap (AI control plane,
+enterprise identity, governance) lives in [ROADMAP.md](ROADMAP.md).
