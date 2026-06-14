@@ -22,7 +22,7 @@ Rules:
 - Rank or position changes between two editions or years ("moved from No. 5 to No. 2", "remains No. 1") are NOT timelines and NOT a versus — prefer "rowtable","list","slope". "versus" requires exactly two competing options.
 - "funnel"/"horn" fit narrowing stages, "pyramid" hierarchy, "journey"/"flow"/"chevron" processes, "proscons"/"comparison"/"balance" trade-offs, "versus" a head-to-head face-off between exactly two options, "iceberg" hidden-vs-visible, "cycle"/"gridcycle"/"gears"/"gearring" loops, "spokes"/"hub"/"mindmap"/"diverge" one-to-many ideas, "lens"/"converge" many-into-one, "nested" containment levels, "bulb" creative ideas, "puzzlering" complementary parts, "milestones" ordered achievements or numbered phases, "cascade" benefits or capabilities each paired with an outcome, "ringcards" items with percentages or completeness, "table" attribute-and-description pairs, "semicircle" a fan of 3-6 stages, "ringchain" step-by-step processes with longer step descriptions, "cone" funnel-style narrowing into one outcome, "infohub" one central topic wired to detailed callout banners, "rowtable" rows pairing a short label with a longer description (and optional metric), "sidefunnel" funnel stages that each need an explanatory side caption, "funnelarrows" funnel stages as alternating arrows with side notes, "discfunnel" funnel stages as stacked discs with a numbered legend, "sidehub" one core entity with 4-6 numbered callouts flanking it, "gaugerow" 2-4 percentage stats as gauge rings, "pencil" education or learning-related lists, "snake" a winding step-by-step path, "metro" stops along a route or schedule, "filmstrip" scenes or releases in sequence, "sticky" brainstorm notes, "bento" one featured item plus supporting tiles, "shelf" resources or references, "lollipop"/"bullet"/"pictobar" compact numeric comparisons, "bowtie" inputs converging then fanning out into outputs, "ripple" effects radiating from one change, "overlap" adjacent concepts sharing ground, "rocket" an ascent toward a goal, "hourglass" many inputs filtered down then expanded into outcomes, "burst" one topic radiating 5-10 facets, each with an icon node, short name and caption (great for top-10 style breakdowns).
 PASSAGE:
-"""${text.slice(0, 1500)}"""`;
+"""${text}"""`;
 
   function cap(s) { s = String(s || '').trim(); return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
 
@@ -292,7 +292,7 @@ Rules:
 - Shape the content for a ${name} diagram: ${hint}
 - 3-12 items, one coherent set. label = the thing's name; what happened/why goes in detail; a compact stat or date goes in value. "icon" = a real lucide.dev icon name or null.
 PASSAGE:
-"""${String(text).slice(0, 1500)}"""`;
+"""${String(text)}"""`;
 
   async function reshape(text, type) {
     if (!text || !(window.claude && window.claude.complete)) return null;
