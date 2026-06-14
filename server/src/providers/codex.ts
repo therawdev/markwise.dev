@@ -3,7 +3,7 @@
 // with OPENAI_API_KEY / CODEX_MODEL env as fallback; without a key the CLI may
 // still be authenticated via a host-level `codex login`.
 import { Codex } from '@openai/codex-sdk';
-import type { AIProvider } from './types.js';
+import type { AIProvider, CompletionResult } from './types.js';
 import { resolveRuntime } from './config.js';
 
 let codex: Codex | null = null;
@@ -29,7 +29,7 @@ export const codexProvider: AIProvider = {
     return { ok: true, reason: 'No OpenAI key set — relying on host `codex login` credentials' };
   },
 
-  async complete(prompt: string): Promise<string> {
+  async complete(prompt: string): Promise<CompletionResult> {
     const rt = await resolveRuntime('codex');
     // A fresh thread per request: completions are stateless one-shots.
     const thread = client(rt.apiKey).startThread({
@@ -43,6 +43,7 @@ export const codexProvider: AIProvider = {
     });
     const turn = await thread.run(prompt);
     if (!turn.finalResponse) throw new Error('Codex returned an empty response');
-    return turn.finalResponse;
+    const u = (turn as { usage?: { input_tokens?: number; output_tokens?: number } }).usage;
+    return { text: turn.finalResponse, model: rt.model, usage: u ? { input: u.input_tokens, output: u.output_tokens } : undefined };
   },
 };

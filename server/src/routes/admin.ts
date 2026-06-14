@@ -5,6 +5,7 @@ import { setAuthCookie } from '../auth.js';
 import { PROVIDERS, providerStatus } from '../providers/index.js';
 import { listProviderConfigs, setProviderConfig } from '../providers/config.js';
 import { secretsConfigured } from '../secrets.js';
+import { aiUsageSummary } from '../usage.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth);
@@ -173,10 +174,15 @@ adminRouter.post('/providers/:id/test', async (req, res) => {
   if (!gate.ok) return res.json({ ok: false, reason: gate.reason });
   try {
     const out = await p.complete('Reply with only the word: ok');
-    res.json({ ok: true, sample: String(out).trim().slice(0, 100) });
+    res.json({ ok: true, sample: String(out.text).trim().slice(0, 100) });
   } catch (e) {
     res.json({ ok: false, reason: e instanceof Error ? e.message : 'request failed' });
   }
+});
+
+// ---- AI usage (global, across the whole platform) ----
+adminRouter.get('/ai-usage', async (req, res) => {
+  res.json(await aiUsageSummary({ days: req.query.days ? Number(req.query.days) : undefined }));
 });
 
 // ---- AI request log: full prompts / responses for review ----

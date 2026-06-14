@@ -42,6 +42,7 @@
     const [apiKeys, setApiKeys] = useState([]);
     const [keysLoaded, setKeysLoaded] = useState(false);
     const [newlyCreatedToken, setNewlyCreatedToken] = useState(null); // {id, fullToken}
+    const [usage, setUsage] = useState(null); // this user's AI usage
 
     // load api keys count for nav badge on mount
     useEffect(() => {
@@ -50,6 +51,11 @@
         setKeysLoaded(true);
       }).catch(() => { setKeysLoaded(true); });
     }, []);
+
+    // lazy-load the user's own AI usage when that pane opens
+    useEffect(() => {
+      if (pane === 'usage' && !usage) window.MarkwiseAPI.get('/api/ai/usage').then(setUsage).catch(() => {});
+    }, [pane]);
 
     const profileDirty = name.trim() !== me.name || email.trim().toLowerCase() !== me.email;
 
@@ -62,6 +68,7 @@
       { id: 'profile',       label: 'Profile' },
       { id: 'security',      label: 'Security' },
       { id: 'notifications', label: 'Notifications' },
+      { id: 'usage',         label: 'AI usage' },
       { id: 'api',           label: 'API keys', count: apiKeys.length || null },
       { id: 'danger',        label: 'Danger zone', danger: true },
     ];
@@ -286,6 +293,12 @@
                       <MWSwitch on={prefOn('billing')} onChange={() => togglePrefReactive('billing')} />
                     </div>
                   </div>
+                </MWSection>
+              ) : null}
+
+              {pane === 'usage' ? (
+                <MWSection title="AI usage" sub="Your AI requests, tokens & estimated cost.">
+                  <MWUsage usage={usage} />
                 </MWSection>
               ) : null}
 

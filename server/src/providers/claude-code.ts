@@ -2,7 +2,7 @@
 // Uses the Claude Code CLI in headless mode: `claude -p "<prompt>" --output-format json`.
 // Requires the `claude` CLI installed and authenticated on the host.
 import { execFile } from 'node:child_process';
-import type { AIProvider } from './types.js';
+import type { AIProvider, CompletionResult } from './types.js';
 import { resolveRuntime } from './config.js';
 
 const BIN = process.env.CLAUDE_CODE_BIN || 'claude';
@@ -37,13 +37,13 @@ export const claudeCodeProvider: AIProvider = {
     }
   },
 
-  async complete(prompt: string): Promise<string> {
+  async complete(prompt: string): Promise<CompletionResult> {
     const rt = await resolveRuntime('claude_code');
     const model = rt.model || DEFAULT_MODEL;
     // Prompt goes via stdin to avoid argv length limits and shell-quoting issues.
     const out = await run(['-p', '--output-format', 'json', '--model', model], prompt);
-    const parsed = JSON.parse(out);
+    const parsed = JSON.parse(out) as { is_error?: boolean; result?: string; usage?: { input_tokens?: number; output_tokens?: number } };
     if (parsed.is_error) throw new Error(`Claude Code error: ${parsed.result || 'unknown'}`);
-    return String(parsed.result || '');
+    return { text: String(parsed.result || ''), model, usage: { input: parsed.usage?.input_tokens, output: parsed.usage?.output_tokens } };
   },
 };

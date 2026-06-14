@@ -59,6 +59,7 @@
     const [aiReqs, setAiReqs] = useState(null);      // { total, rows }
     const [reqStatus, setReqStatus] = useState('');  // '' | 'ok' | 'error'
     const [aiReqDetail, setAiReqDetail] = useState(null); // full row in the viewer
+    const [usage, setUsage] = useState(null); // global AI usage summary
 
     const [userQ, setUserQ] = useState('');
     const [coQ, setCoQ] = useState('');
@@ -93,10 +94,10 @@
 
     useEffect(() => { loadAll(); }, [loadAll]);
 
-    // Lazy-load the AI request log only when its tab is open (it can be large).
+    // Lazy-load AI log / usage only when their tab is open.
     useEffect(() => {
-      if (tab !== 'ailogs') return;
-      API.get('/api/admin/ai-requests' + (reqStatus ? '?status=' + reqStatus : '')).then(setAiReqs).catch(() => {});
+      if (tab === 'ailogs') API.get('/api/admin/ai-requests' + (reqStatus ? '?status=' + reqStatus : '')).then(setAiReqs).catch(() => {});
+      if (tab === 'usage') API.get('/api/admin/ai-usage').then(setUsage).catch(() => {});
     }, [tab, reqStatus]);
     const openReq = (id) => API.get('/api/admin/ai-requests/' + id).then(setAiReqDetail).catch((e) => toast(e.message));
 
@@ -247,6 +248,7 @@
     const tabs = [
       { id: 'overview', label: 'Overview' },
       { id: 'ai', label: 'AI provider' },
+      { id: 'usage', label: 'AI usage' },
       { id: 'ailogs', label: 'AI logs' },
       { id: 'users', label: 'Users', count: users.length },
       { id: 'companies', label: 'Companies', count: companies.length },
@@ -401,6 +403,12 @@
                   })}
                 </div>
               ) : null}
+            </MWSection>
+          ) : null}
+
+          {!loading && tab === 'usage' ? (
+            <MWSection title="AI usage" sub="Requests, tokens & estimated cost across the whole platform.">
+              <MWUsage usage={usage} />
             </MWSection>
           ) : null}
 

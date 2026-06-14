@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db, audit } from '../db.js';
 import { requireAuth, hasPermission } from '../middleware.js';
 import { DEFAULT_ROLES, PERMISSIONS, isValidPermissionList } from '../permissions.js';
+import { aiUsageSummary } from '../usage.js';
 
 export const orgsRouter = Router();
 
@@ -38,6 +39,15 @@ function slugify(name: string): string {
 
 /** The shared permission catalog, for the role-builder UI. */
 orgsRouter.get('/permissions', (_req, res) => res.json(PERMISSIONS));
+
+// A company's AI usage (any member who can view the org; app owner always).
+orgsRouter.get('/:id/ai-usage', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await hasPermission(req.user!, companyId, 'doc:view')) && !req.user!.is_app_owner) {
+    return res.status(403).json({ error: 'No access' });
+  }
+  res.json(await aiUsageSummary({ companyId, days: req.query.days ? Number(req.query.days) : undefined }));
+});
 
 // ---- create a company; creator becomes Owner with system roles seeded ----
 orgsRouter.post('/', async (req, res) => {

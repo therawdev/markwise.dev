@@ -3,6 +3,7 @@ import { db } from '../db.js';
 import { requireAuth, hasPermission } from '../middleware.js';
 import { activeProvider, providerStatus, PROVIDERS } from '../providers/index.js';
 import { resolveRuntime } from '../providers/config.js';
+import { aiUsageSummary } from '../usage.js';
 import { aiLimiter } from '../rate-limit.js';
 
 export const aiRouter = Router();
@@ -10,6 +11,11 @@ aiRouter.use(requireAuth);
 
 aiRouter.get('/status', async (_req, res) => {
   res.json(await providerStatus());
+});
+
+// The signed-in user's own AI usage.
+aiRouter.get('/usage', async (req, res) => {
+  res.json(await aiUsageSummary({ userId: req.user!.id, days: req.query.days ? Number(req.query.days) : undefined }));
 });
 
 /**
@@ -45,14 +51,16 @@ aiRouter.post('/complete', aiLimiter, async (req, res) => {
     const rt = await resolveRuntime(provider.id, companyId);
     const t0 = Date.now();
     try {
-      const text = await provider.complete(prompt);
+      const result = await provider.complete(prompt);
       const ms = Date.now() - t0;
       await db('ai_usage').insert({ user_id: req.user!.id, company_id: companyId, provider: provider.id, kind: 'complete', ok: true });
       await db('ai_requests').insert({
-        user_id: req.user!.id, company_id: companyId, provider: provider.id, model: rt.model || null,
-        status: 'ok', failover: isFailover, latency_ms: ms, prompt, response: text,
+        user_id: req.user!.id, company_id: companyId, provider: provider.id, model: result.model || rt.model || null,
+        status: 'ok', failover: isFailover, latency_ms: ms,
+        input_tokens: result.usage?.input ?? null, output_tokens: result.usage?.output ?? null,
+        prompt, response: result.text,
       });
-      return res.json({ text, provider: provider.id });
+      return res.json({ text: result.text, provider: provider.id });
     } catch (e) {
       const ms = Date.now() - t0;
       lastErr = e;

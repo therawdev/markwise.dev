@@ -1,6 +1,6 @@
 // Google Gemini provider (REST, no SDK dependency). Key & model are resolved from
 // the DB (admin UI / per-org) with GEMINI_API_KEY / GEMINI_MODEL env as fallback.
-import type { AIProvider } from './types.js';
+import type { AIProvider, CompletionResult } from './types.js';
 import { resolveRuntime } from './config.js';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
@@ -17,7 +17,7 @@ export const geminiProvider: AIProvider = {
     return { ok: true };
   },
 
-  async complete(prompt: string): Promise<string> {
+  async complete(prompt: string): Promise<CompletionResult> {
     const rt = await resolveRuntime('gemini');
     if (!rt.apiKey) throw new Error('No Gemini API key configured');
     const model = rt.model || DEFAULT_MODEL;
@@ -33,11 +33,12 @@ export const geminiProvider: AIProvider = {
     }
     const data = (await r.json()) as {
       candidates?: { content?: { parts?: { text?: string }[] } }[];
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
     };
     const text = (data.candidates?.[0]?.content?.parts || [])
       .map((p) => p.text || '')
       .join('');
     if (!text) throw new Error('Gemini returned an empty response');
-    return text;
+    return { text, model, usage: { input: data.usageMetadata?.promptTokenCount, output: data.usageMetadata?.candidatesTokenCount } };
   },
 };

@@ -294,8 +294,55 @@
     );
   }
 
+  // Shared AI-usage panel (admin global / company / individual scopes).
+  function MWUsage({ usage }) {
+    if (!usage) return <div className="card"><div className="empty-note">Loading…</div></div>;
+    const t = usage.totals || {};
+    const num = (n) => Number(n || 0).toLocaleString();
+    const cards = [
+      ['Requests', num(t.requests)],
+      ['Success', t.requests ? Math.round((100 * t.ok) / t.requests) + '%' : '—'],
+      ['Input tokens', num(t.input_tokens)],
+      ['Output tokens', num(t.output_tokens)],
+      ['Est. cost', '$' + Number(t.est_cost_usd || 0).toFixed(4)],
+      ['Avg latency', (t.avg_latency_ms || 0) + 'ms'],
+    ];
+    return (
+      <React.Fragment>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))', gap: 10, marginBottom: 14 }}>
+          {cards.map(([k, v]) => (
+            <div key={k} className="card" style={{ padding: '12px 14px' }}>
+              <div style={{ fontSize: 10.5, color: '#7a756c', textTransform: 'uppercase', letterSpacing: '.5px' }}>{k}</div>
+              <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{v}</div>
+            </div>
+          ))}
+        </div>
+        {(usage.byProvider || []).length ? (
+          <div className="card" style={{ marginBottom: 12 }}>
+            <table className="tbl">
+              <thead><tr><th>Provider</th><th>Requests</th><th>OK</th><th>Input tok</th><th>Output tok</th></tr></thead>
+              <tbody>{usage.byProvider.map((p) => (
+                <tr key={p.provider}><td>{p.provider}</td><td>{p.requests}</td><td>{p.ok}</td><td>{num(p.input_tokens)}</td><td>{num(p.output_tokens)}</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        ) : null}
+        {(usage.byModel || []).length ? (
+          <div className="card">
+            <table className="tbl">
+              <thead><tr><th>Model</th><th>Requests</th><th>Input tok</th><th>Output tok</th><th>Est. cost</th></tr></thead>
+              <tbody>{usage.byModel.map((m) => (
+                <tr key={m.model}><td>{m.model}</td><td>{m.requests}</td><td>{num(m.input_tokens)}</td><td>{num(m.output_tokens)}</td><td>${Number(m.est_cost_usd || 0).toFixed(4)}</td></tr>
+              ))}</tbody>
+            </table>
+          </div>
+        ) : null}
+      </React.Fragment>
+    );
+  }
+
   Object.assign(window, {
-    MWTopbar, MWBell, MWPalette, MWPill, MWSection, MWTabs, MWSwitch, MWAvatar, MWConfirmDelete,
+    MWTopbar, MWBell, MWPalette, MWPill, MWSection, MWTabs, MWSwitch, MWAvatar, MWConfirmDelete, MWUsage,
     mwHueFor, mwAgo, mwFmtDate, mwFmtWhen, mwCopy, mwDetail, MW_ACTION_LABELS,
   });
 })();

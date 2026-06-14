@@ -186,6 +186,7 @@
     const [invites, setInvites] = useState([]);
     const [inviteRoleId, setInviteRoleId] = useState(null);
     const [coName, setCoName] = useState('');
+    const [usage, setUsage] = useState(null); // this company's AI usage
 
     const load = () => {
       setLoading(true); setLoadErr(null);
@@ -212,6 +213,7 @@
       API.get('/api/orgs/' + companyId + '/invites').then(setInvites).catch(() => {});
     };
     useEffect(() => { if (org && tab === 'members') loadInvites(); }, [org, tab]);
+    useEffect(() => { if (org && tab === 'usage') API.get('/api/orgs/' + companyId + '/ai-usage').then(setUsage).catch(() => {}); }, [org, tab]);
 
     if (loading) {
       return (
@@ -265,6 +267,7 @@
       { id: 'roles',    label: 'Roles & permissions', count: roles.length },
     ];
     if (canBilling)  tabDefs.push({ id: 'billing',  label: 'Billing' });
+    tabDefs.push(    { id: 'usage',    label: 'AI usage' });
     tabDefs.push(    { id: 'activity', label: 'Activity' });
     if (canSettings) tabDefs.push({ id: 'settings', label: 'Settings' });
 
@@ -535,6 +538,13 @@
           {/* ===== BILLING TAB ===== */}
           {tab === 'billing' && canBilling ? (
             <MWBillingTab companyId={companyId} org={org} setPlan={setPlan} />
+          ) : null}
+
+          {/* ===== AI USAGE TAB ===== */}
+          {tab === 'usage' ? (
+            <MWSection title="AI usage" sub="This company's AI requests, tokens & estimated cost.">
+              <MWUsage usage={usage} />
+            </MWSection>
           ) : null}
 
           {/* ===== ACTIVITY TAB ===== */}
