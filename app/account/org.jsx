@@ -174,7 +174,7 @@
   }
 
   // ===== ORG PAGE =====
-  function MWOrgPage({ ctx, companyId }) {
+  function MWOrgPage({ ctx, companyId, tab: tabProp }) {
     const { me, reload, navigate, toast } = ctx;
     const API = window.MarkwiseAPI;
 
@@ -182,7 +182,12 @@
     const [catalog, setCatalog] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadErr, setLoadErr] = useState(null);
-    const [tab, setTab] = useState('members');
+    // The active tab is URL-driven (/org/:id/:tab). Normalise common/odd segments
+    // (e.g. the singular "member") to a real tab id; unknown → members.
+    const ORG_TABS = ['members', 'roles', 'billing', 'usage', 'ai-keys', 'activity', 'settings'];
+    const normTab = (t) => (t === 'member' ? 'members' : ORG_TABS.indexOf(t) !== -1 ? t : 'members');
+    const [tab, setTab] = useState(normTab(tabProp || 'members'));
+    const selectTab = (t) => { setTab(t); navigate('/org/' + companyId + '/' + t); };
     const [invites, setInvites] = useState([]);
     const [inviteRoleId, setInviteRoleId] = useState(null);
     const [coName, setCoName] = useState('');
@@ -206,7 +211,9 @@
       });
     };
 
-    useEffect(() => { load(); setTab('members'); }, [companyId]);
+    useEffect(() => { load(); }, [companyId]);
+    // Keep the tab in sync with the URL (deep link, back/forward, company switch).
+    useEffect(() => { setTab(normTab(tabProp || 'members')); }, [tabProp, companyId]);
 
     const loadInvites = () => {
       API.get('/api/orgs/' + companyId + '/invites').then(setInvites).catch(() => {});
@@ -416,7 +423,7 @@
             {org.status === 'suspended' ? <MWPill tone="red">Suspended</MWPill> : null}
           </div>
 
-          <MWTabs tabs={tabDefs} value={tab} onChange={setTab} />
+          <MWTabs tabs={tabDefs} value={tab} onChange={selectTab} />
 
           {/* ===== MEMBERS TAB ===== */}
           {tab === 'members' ? (

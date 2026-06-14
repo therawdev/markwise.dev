@@ -67,7 +67,7 @@ app.use(express.static(webRoot, {
 
 // Account SPA: one shell (app.html) backs all client-side routes. The router
 // reads location.pathname, so a hard load of /org/5 must serve the shell too.
-app.get(['/docs', '/admin', '/settings', '/login', '/signup', '/org/:id', '/invite/:token'], (_req, res) => {
+app.get(['/docs', '/admin', '/settings', '/login', '/signup', '/org/:id', '/org/:id/:tab', '/invite/:token'], (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(spaShell);
 });

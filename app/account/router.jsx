@@ -13,8 +13,8 @@
     if (p === '/settings') return { name: 'settings' };
     if (p === '/login') return { name: 'login' };
     if (p === '/signup') return { name: 'signup' };
-    const org = p.match(/^\/org\/(\d+)$/);
-    if (org) return { name: 'org', id: parseInt(org[1], 10) };
+    const org = p.match(/^\/org\/(\d+)(?:\/([a-z-]+))?$/);
+    if (org) return { name: 'org', id: parseInt(org[1], 10), tab: org[2] || null };
     const inv = p.match(/^\/invite\/(.+)$/);
     if (inv) return { name: 'invite', token: decodeURIComponent(inv[1]) };
     return { name: 'docs' };
@@ -80,7 +80,7 @@
       navigate('/docs');
       page = null;
     } else if (route.name === 'org') {
-      page = <window.MWOrgPage ctx={ctx} companyId={route.id} />;
+      page = <window.MWOrgPage ctx={ctx} companyId={route.id} tab={route.tab} />;
     } else if (route.name === 'admin') {
       page = me.is_app_owner ? <window.MWAdminPage ctx={ctx} /> : <window.MWDashboard ctx={ctx} />;
     } else if (route.name === 'settings') {
