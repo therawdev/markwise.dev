@@ -143,6 +143,8 @@
         const topY = botY - 2 * R;
         const inner = i === n - 1;
         const ly = inner ? botY - R : topY + 17;
+        const icoX = cx - (inner ? R * 0.8 : 75) - 12;
+        els.push(<g key={'ico' + i}>{I.draw(icoX, ly, 16, I.nameFor(it), c.deep, 2)}</g>);
         els.push(
           <g key={'it' + i}>
             {D.ctext(cx, ly, it.label, { size: inner ? 12 : 11.5, weight: 700, fill: c.deep, maxW: inner ? R * 1.6 : 150, maxLines: inner ? 3 : 1 })}
@@ -233,9 +235,9 @@
       IT.forEach((it, i) => {
         const c = A(i);
         const y = t.y0 + 22 + i * Math.min(44, Math.max(34, (2 * R) / n + 6));
+        els.push(<g key={'ico' + i}>{I.draw(376, y, 20, I.nameFor(it), c.p, 2)}</g>);
         els.push(
           <g key={'it' + i}>
-            {I.draw(376, y, 20, it.icon || (it.label || '') + ' ' + (it.detail || ''), c.p, 2)}
             {D.ctext(396, y - (it.detail ? 8 : 0), it.label + (it.value ? '  ·  ' + it.value : ''), { size: 12.5, weight: 700, fill: c.deep, anchor: 'start', maxW: 295, maxLines: 1 })}
             {it.detail ? D.ctext(396, y + 12, it.detail, { size: 10, fill: GREY, anchor: 'start', maxW: 295, maxLines: 1 }) : null}
           </g>
@@ -296,8 +298,8 @@
         els.push(
           <g key={'it' + i}>
             {I.draw(ix, y, 26, it.icon || (it.label || '') + ' ' + (it.detail || ''), c.p, 1.9)}
-            {D.ctext(txx, y - 4, it.label + (it.value ? ' · ' + it.value : ''), { size: 13.5, weight: 700, fill: c.p, anchor, maxW: 168, maxLines: 2 })}
-            {it.detail ? D.ctext(txx, y + 18, it.detail, { size: 10.5, fill: GREY, anchor, maxW: 168, maxLines: 2 }) : null}
+            {D.ctext(txx, y - 14, it.label + (it.value ? ' · ' + it.value : ''), { size: 13.5, weight: 700, fill: c.p, anchor, maxW: 168, maxLines: 2 })}
+            {it.detail ? D.ctext(txx, y + 20, it.detail, { size: 10.5, fill: GREY, anchor, maxW: 168, maxLines: 2 }) : null}
           </g>
         );
       });

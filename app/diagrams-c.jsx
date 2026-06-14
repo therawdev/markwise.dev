@@ -97,12 +97,12 @@
           <g key={'it' + i}>
             {D.box(x, y, cw, ch, { fill: '#fff', stroke: c.mid, rx: 12 })}
             {D.box(x, y, 5, ch, { fill: c.p, stroke: 'none', rx: 2.5 })}
-            {!it.value ? I.draw(x + cw - 20, y + 22, 19, I.nameFor(it), c.p, 2) : null}
-            {D.text(x + 18, y + 30, it.label, { size: 13.5, weight: 700, fill: c.deep, maxW: cw - 34 - (it.value ? 50 : 24), maxLines: 2 })}
-            {it.detail ? D.text(x + 18, y + ch - 22, it.detail, { size: 10.5, fill: GREY, maxW: cw - 34, maxLines: 2 }) : null}
+            {D.text(x + 46, y + 30, it.label, { size: 13.5, weight: 700, fill: c.deep, maxW: cw - 62 - (it.value ? 50 : 12), maxLines: 2 })}
+            {it.detail ? D.text(x + 46, y + ch - 22, it.detail, { size: 10.5, fill: GREY, maxW: cw - 62, maxLines: 2 }) : null}
             {it.value ? D.text(x + cw - 14, y + 30, it.value, { size: 13, weight: 700, fill: c.p, anchor: 'end', maxW: 70, maxLines: 1 }) : null}
           </g>
         );
+        els.push(<g key={'ico' + i}>{I.draw(x + 27, y + 28, 19, I.nameFor(it), c.p, 2)}</g>);
       });
       return { h: t.y0 + rows * (ch + gap) - gap + 26, el: els };
     },
@@ -441,8 +441,8 @@
       const t = D.title(spec.title);
       const IT = spec.items, n = IT.length;
       const perSide = Math.ceil(n / 2);
-      const ribH = 88;
-      const cy = t.y0 + ribH + 30;
+      const ribH = 100;
+      const cy = t.y0 + ribH + 54;
       const x0 = 40, x1 = W - 150;
       const els = [t.el];
       els.push(<g key="spine">{D.arrow(x0, cy, x1, cy, { stroke: A(0).p, sw: 2.6 })}</g>);
@@ -452,23 +452,29 @@
           {D.ctext(x1 + 58, cy, spec.title, { size: 11.5, weight: 700, fill: '#fff', maxW: 82, maxLines: 3 })}
         </g>
       );
+      const laneStart = x0 + 50, laneEnd = x1 - 14;
+      const colW = (laneEnd - laneStart) / Math.max(1, perSide);
+      const labelW = Math.max(94, Math.min(166, colW * 1.5));
       IT.forEach((it, i) => {
         const c = A(i);
         const up = i % 2 === 0;
         const k = Math.floor(i / 2);
-        const span = (x1 - x0 - 80) / Math.max(1, perSide);
-        const xb = x0 + 60 + k * span + (up ? 0 : span * 0.45);
-        const xt = xb + 44;
-        const yt = cy + (up ? -ribH : ribH);
-        els.push(<g key={'rib' + i}>{D.line(xb, cy, xt, yt, { stroke: c.p, sw: 1.8 })}</g>);
+        const dir = up ? -1 : 1;
+        // alternate bone length so adjacent same-side labels stagger into two rows
+        const len = k % 2 === 0 ? ribH : ribH * 0.44;
+        const run = 44 * (len / ribH);
+        const xb = laneStart + (k + 0.5) * colW - run;
+        const xt = xb + run;
+        const yt = cy + dir * len;
+        els.push(<g key={'rib' + i}>{D.line(xb, cy, xt, yt, { stroke: c.p, sw: 1.8 })}{D.circle(xt, yt, 3, { fill: c.p, stroke: c.p })}</g>);
         els.push(
           <g key={'it' + i}>
-            {D.ctext(xt + 4, yt + (up ? -14 : 12) - (it.detail && up ? 14 : 0), it.label, { size: 12, weight: 600, fill: c.deep, anchor: 'middle', maxW: 130, maxLines: 2 })}
-            {it.detail ? D.ctext(xt + 4, yt + (up ? -14 : 12) + (up ? 16 : 16), it.detail, { size: 9.5, fill: GREY, anchor: 'middle', maxW: 130, maxLines: 1 }) : null}
+            {D.ctext(xt, yt + dir * 15, it.label, { size: 11.5, weight: 700, fill: c.deep, anchor: 'middle', maxW: labelW, maxLines: 2 })}
+            {it.detail ? D.ctext(xt, yt + dir * 39, it.detail, { size: 9, fill: GREY, anchor: 'middle', maxW: labelW, maxLines: 1 }) : null}
           </g>
         );
       });
-      return { h: cy + ribH + 44, el: els };
+      return { h: cy + ribH + 58, el: els };
     },
   };
 
@@ -494,11 +500,12 @@
         const bw = Math.min(len, x1 - start);
         els.push(
           <g key={'it' + i}>
-            {D.ctext(24, y, it.label, { size: 12.5, weight: 600, fill: c.deep, anchor: 'start', maxW: labW - 16, maxLines: 2 })}
+            {D.ctext(48, y, it.label, { size: 12.5, weight: 600, fill: c.deep, anchor: 'start', maxW: labW - 40, maxLines: 2 })}
             {D.box(start, y - 13, bw, 26, { fill: c.p, stroke: c.p, rx: 13, fillOpacity: pal.multi ? 0.9 : 0.78 })}
             {it.value ? D.ctext(Math.min(start + bw + 10, x1 - 4), y, it.value, { size: 10.5, weight: 700, fill: c.p, anchor: 'start', maxW: 70, maxLines: 1 }) : null}
           </g>
         );
+        els.push(<g key={'ico' + i}>{I.draw(33, y, 16, I.nameFor(it), c.p, 2)}</g>);
       });
       return { h: t.y0 + n * rowH + 24, el: els };
     },

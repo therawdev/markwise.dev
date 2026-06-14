@@ -87,21 +87,27 @@
   //  • free text → keyword-matched to a built-in icon (always-available fallback)
   function draw(x, y, size, nameOrText, color, sw) {
     const tf = `translate(${(x - size / 2).toFixed(1)} ${(y - size / 2).toFixed(1)}) scale(${(size / 24).toFixed(3)})`;
+    // transparent backing so the whole icon box is clickable/draggable in the editor
+    // (the stroke paths alone leave gaps that clicks fall through). Invisible otherwise.
+    const hit = <rect key="hit" x="-2" y="-2" width="28" height="28" fill="transparent" />;
     if (P[nameOrText]) {
-      return <g transform={tf}><path d={P[nameOrText]} fill="none" stroke={color} strokeWidth={sw || 1.9} strokeLinecap="round" strokeLinejoin="round" /></g>;
+      return <g transform={tf}>{hit}<path d={P[nameOrText]} fill="none" stroke={color} strokeWidth={sw || 1.9} strokeLinecap="round" strokeLinejoin="round" /></g>;
     }
     if (isIconName(nameOrText)) {
       const kids = lucideNodes(nameOrText);
       if (Array.isArray(kids) && kids.length) {
         return (
-          <g transform={tf} fill="none" stroke={color} strokeWidth={sw || 1.9} strokeLinecap="round" strokeLinejoin="round">
-            {kids.map((c, i) => React.createElement(c[0], Object.assign({ key: i }, c[1])))}
+          <g transform={tf}>
+            {hit}
+            <g fill="none" stroke={color} strokeWidth={sw || 1.9} strokeLinecap="round" strokeLinejoin="round">
+              {kids.map((c, i) => React.createElement(c[0], Object.assign({ key: i }, c[1])))}
+            </g>
           </g>
         );
       }
     }
     // free-text fallback → built-in keyword icon
-    return <g transform={tf}><path d={P[pick(nameOrText)]} fill="none" stroke={color} strokeWidth={sw || 1.9} strokeLinecap="round" strokeLinejoin="round" /></g>;
+    return <g transform={tf}>{hit}<path d={P[pick(nameOrText)]} fill="none" stroke={color} strokeWidth={sw || 1.9} strokeLinecap="round" strokeLinejoin="round" /></g>;
   }
   // the icon name to draw for a spec item: the AI's explicit `it.icon` (a Lucide name),
   // else keyword-match its label+detail text to a built-in icon

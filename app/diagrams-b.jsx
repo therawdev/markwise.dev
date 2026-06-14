@@ -15,8 +15,18 @@
       const IT = spec.items, n = IT.length;
       const hasVal = IT.some((it) => it.value);
       const variant = spec.variant || 'ring';
-      const R = n >= 6 ? 172 : n >= 5 ? 158 : 144;
-      const bw = n >= 6 ? 116 : 132, bh = hasVal ? 56 : 46;
+      const bh = hasVal ? 56 : 46;
+      // Grow the ring so horizontally-adjacent boxes never overlap: the chord between
+      // adjacent nodes must clear the box width. Boxes shrink only if the ring is
+      // capped to stay inside the frame.
+      const baseR = n >= 6 ? 172 : n >= 5 ? 158 : 144;
+      let bw = n >= 6 ? 116 : 132;
+      const gap = 16;
+      const stepDeg = variant === 'horseshoe' && n > 1 ? 240 / (n - 1) : 360 / n;
+      const halfStep = (stepDeg * Math.PI) / 360; // (stepDeg/2) in radians
+      const maxR = 360 - bw / 2 - 14;
+      let R = Math.max(baseR, (bw + gap) / (2 * Math.sin(halfStep)));
+      if (R > maxR) { R = maxR; bw = Math.max(92, Math.floor(2 * R * Math.sin(halfStep) - gap)); }
       const rx = variant === 'pills' ? bh / 2 : 14;
       const cx = 360, cy = t.y0 + R + bh / 2 + 6;
       const step = 360 / n;

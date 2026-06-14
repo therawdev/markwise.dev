@@ -84,12 +84,12 @@
           <g key={'it' + i}>
             {D.box(x, y, cw, ch, { fill: '#fff', stroke: c.mid, rx: 12 })}
             {D.circle(x + 32, y + ch / 2, 16, { fill: c.p, stroke: c.p })}
-            {D.ctext(x + 32, y + ch / 2, String(i + 1), { size: 13.5, weight: 700, fill: '#fff' })}
             {D.ctext(x + 64, y + ch / 2 - (it.detail ? 9 : 0), it.label, { size: cols === 2 ? 13 : 15, weight: 600, fill: c.deep, anchor: 'start', maxW: cw - 64 - (it.value ? 96 : 34), maxLines: 1 })}
             {it.detail ? D.ctext(x + 64, y + ch / 2 + 13, it.detail, { size: cols === 2 ? 10.5 : 11.5, fill: GREY, anchor: 'start', maxW: cw - 90, maxLines: 1 }) : null}
             {it.value ? D.ctext(x + cw - 18, y + ch / 2, it.value, { size: cols === 2 ? 12.5 : 14, weight: 700, fill: c.p, anchor: 'end', maxW: 92, maxLines: 1 }) : null}
           </g>
         );
+        els.push(<g key={'ico' + i}>{I.draw(x + 32, y + ch / 2, 19, I.nameFor(it), '#fff', 2)}</g>);
       });
       return { h: t.y0 + Math.ceil(IT.length / cols) * (ch + gap) + 13, el: els };
     },
@@ -119,14 +119,16 @@
         els.push(
           <g key={'it' + i}>
             {D.line(x, ly, x, up ? ly - 22 : ly + 22, { stroke: c.mid, sw: 1.5 })}
-            {D.circle(x, ly, 7, { fill: c.p, stroke: c.p })}
-            {it.value ? D.ctext(x, up ? ly - 78 : ly + 88, it.value, { size: 12, weight: 700, fill: c.p, maxW: 120, maxLines: 1 }) : null}
+            {it.value ? D.ctext(x, up ? ly - 86 : (it.detail ? ly + 116 : ly + 88), it.value, { size: 12, weight: 700, fill: c.p, maxW: 124, maxLines: 1 }) : null}
             {D.ctext(x, up ? ty - 22 : ty + 12, it.label, { size: 13.5, weight: 600, fill: c.deep, maxW: 128, maxLines: 2 })}
             {it.detail ? D.ctext(x, up ? ty + 6 : ty + 42, it.detail, { size: 10.5, fill: GREY, maxW: 128, maxLines: 2 }) : null}
           </g>
         );
+        els.push(<g key={'ico' + i}>{D.circle(x, ly, 12, { fill: c.p, stroke: '#fff', sw: 1.5 })}{I.draw(x, ly, 15, I.nameFor(it), '#fff', 2)}</g>);
       });
-      return { h: ly + (IT.some((_, i) => !upF(i)) ? 130 : 44), el: els };
+      const anyDown = IT.some((_, i) => !upF(i));
+      const anyDownVal = IT.some((it, i) => !upF(i) && it.value);
+      return { h: ly + (anyDown ? (anyDownVal ? 150 : 132) : 50), el: els };
     },
   };
   D9.timeline.variants = [
@@ -219,10 +221,12 @@
         const w1 = wAt(i), w2 = wAt(i + 1);
         const op = M ? 0.88 : 0.62 - (0.45 * i) / Math.max(1, n - 1);
         const dark = op > 0.42;
+        const wMid = (w1 + w2) / 2;
+        const innerLeft = cx - wMid / 2 + 18;
         els.push(
           <g key={'it' + i}>
             {D.poly([[cx - w1 / 2, y], [cx + w1 / 2, y], [cx + w2 / 2, y + sh], [cx - w2 / 2, y + sh]], { fill: c.p, fillOpacity: op, stroke: c.p })}
-            {D.ctext(cx, y + sh / 2, it.label, { size: 13.5, weight: 600, fill: dark ? '#fff' : c.deep, maxW: Math.max(w1, w2) - 10, maxLines: 2 })}
+            {D.ctext(cx + 16, y + sh / 2, it.label, { size: 13.5, weight: 600, fill: dark ? '#fff' : c.deep, maxW: Math.max(58, wMid - 54), maxLines: 2 })}
             {it.detail ? (
               <g>
                 {D.line(cx + w2 / 2 + 8, y + sh / 2, cx + botW / 2 + 22, y + sh / 2, { stroke: c.mid, sw: 1.2 })}
@@ -231,6 +235,7 @@
             ) : null}
           </g>
         );
+        els.push(<g key={'ico' + i}>{I.draw(innerLeft, y + sh / 2, 18, I.nameFor(it), dark ? '#fff' : c.deep, 2)}</g>);
       });
       return { h: t.y0 + n * (sh + gy) + 18, el: els };
     },

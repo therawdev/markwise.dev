@@ -133,9 +133,19 @@
       const t = D.title(spec.title);
       const IT = spec.items, n = IT.length;
       const cx = W / 2, cy = t.y0 + 26, R = 128;
-      const dist = R + 116;
-      const chord = 2 * dist * Math.sin(Math.PI / (2 * Math.max(2, n)));
-      const bw = Math.min(152, chord - 8), bh = 102;
+      // Fan the cards on a radius big enough that adjacent cards clear each other's
+      // height (the binding constraint near the arc ends). For many items this pushes
+      // the end cards out into the otherwise-empty top corners instead of overlapping.
+      const gap = 12;
+      const stepHalf = Math.PI / (2 * Math.max(2, n)); // half the angular step between cards
+      const maxDist = cx - 52;                          // keep end cards inside the 720 frame
+      let dist = Math.max(R + 112, (102 + gap) / (2 * Math.sin(stepHalf)));
+      if (dist > maxDist) dist = maxDist;
+      const chord = 2 * dist * Math.sin(stepHalf);
+      const bh = Math.min(102, chord - gap);
+      const bw = Math.max(84, Math.min(150, chord - gap));
+      const big = bh >= 96;
+      const iconSize = big ? 24 : 18;
       const els = [t.el, <g key="arc">{D.path(arcPath(cx, cy, R, 0, 180), { fill: 'none', stroke: GREY, sw: 2 })}</g>];
       IT.forEach((it, i) => {
         const c = A(i);
@@ -150,9 +160,9 @@
             {D.circle(dx, dy, 7, { fill: c.p, stroke: c.p })}
             {D.circle(gx, gy, 15, { fill: '#fff', stroke: c.p, sw: 1.8 })}
             {D.ctext(gx, gy, String(i + 1), { size: 12, weight: 700, fill: c.deep })}
-            {window.GlyphIcons ? window.GlyphIcons.draw(bx, by - bh / 2 + 22, 24, window.GlyphIcons.nameFor(it), c.p, 2) : null}
-            {D.ctext(bx, by - (it.detail ? 10 : 2), it.label, { size: 12.5, weight: 700, fill: c.deep, maxW: bw - 24, maxLines: 2 })}
-            {it.detail ? D.ctext(bx, by + 24, it.detail, { size: 10, fill: GREY, maxW: bw - 22, maxLines: 2 }) : null}
+            {window.GlyphIcons ? window.GlyphIcons.draw(bx, by - bh / 2 + 6 + iconSize / 2, iconSize, window.GlyphIcons.nameFor(it), c.p, 2) : null}
+            {D.ctext(bx, by - bh / 2 + 6 + iconSize + (it.detail ? 15 : 20), it.label, { size: 12.5, weight: 700, fill: c.deep, maxW: bw - 20, maxLines: 2 })}
+            {it.detail ? D.ctext(bx, by + bh / 2 - (big ? 18 : 12), it.detail, { size: 10, fill: GREY, maxW: bw - 18, maxLines: big ? 2 : 1 }) : null}
           </g>
         );
       });
@@ -189,7 +199,6 @@
           <g key={'it' + i}>
             {D.circle(x, cy, r, { fill: '#fff', stroke: c.p, sw: 10 })}
             {D.circle(x, cy, r - 11, { fill: c.soft, stroke: c.p, sw: 1.2 })}
-            {D.ctext(x, cy, String(i + 1), { size: 16, weight: 700, fill: c.deep })}
             {D.box(x - pw / 2, pillY, pw, ph, { fill: c.soft, stroke: c.p, rx: 15 })}
             {D.ctext(x, pillY + ph / 2, it.label, { size: 11.5, weight: 700, fill: c.deep, maxW: pw - 18, maxLines: 1 })}
             {D.line(x, a1, x, a2, { stroke: GREY, sw: 1.3, dash: '4 5' })}
@@ -197,6 +206,7 @@
             {it.detail ? D.ctext(x, top ? t.y0 + 26 : pillY + ph + 28, it.detail, { size: 10, fill: GREY, maxW: txtW, maxLines: 3 }) : null}
           </g>
         );
+        if (window.GlyphIcons) els.push(<g key={'ico' + i}>{window.GlyphIcons.draw(x, cy, 16, window.GlyphIcons.nameFor(it), c.deep, 2)}</g>);
       });
       return { h: cy + r + 22 + 30 + 58, el: els };
     },
@@ -239,11 +249,12 @@
                 {D.poly([[ox - 5, cy], [ox, cy - 5], [ox + 5, cy], [ox, cy + 5]], { fill: GREY, stroke: GREY })}
                 {D.line(ox + 5, cy, ox + 14, cy, { stroke: GREY, sw: 1.2 })}
                 {D.poly([[ox + 14, y + 8], [ox + tagW - 26, y + 8], [ox + tagW, cy], [ox + tagW - 26, y + rowH - 8], [ox + 14, y + rowH - 8]], { fill: c.soft, stroke: c.p })}
-                {D.ctext(ox + tagW / 2, cy, it.label, { size: 11, weight: 700, fill: c.deep, maxW: tagW - 34, maxLines: 2 })}
+                {D.ctext(ox + tagW / 2 + 12, cy, it.label, { size: 11, weight: 700, fill: c.deep, maxW: tagW - 58, maxLines: 2 })}
                 {D.box(ox + dxOff, y + 4, dw, rowH - 8, { fill: '#fff', stroke: c.mid, rx: 8 })}
                 {D.ctext(ox + dxOff + dw / 2, cy, it.detail || '—', { size: 10, fill: GREY, maxW: dw - 18, maxLines: 3 })}
               </g>
             );
+            if (window.GlyphIcons) els.push(<g key={'ico' + gi}>{window.GlyphIcons.draw(ox + 32, cy, 15, window.GlyphIcons.nameFor(it), c.deep, 2)}</g>);
           });
         });
         const tallSide = half;
@@ -266,13 +277,14 @@
             {D.poly([[17, cy], [22, cy - 5], [27, cy], [22, cy + 5]], { fill: GREY, stroke: GREY })}
             {D.line(27, cy, 36, cy, { stroke: GREY, sw: 1.2 })}
             {D.poly([[36, y + 8], [214, y + 8], [240, cy], [214, y + rowH - 8], [36, y + rowH - 8]], { fill: c.soft, stroke: c.p })}
-            {D.ctext(130, cy, it.label, { size: 12.5, weight: 700, fill: c.deep, maxW: 158, maxLines: 2 })}
+            {D.ctext(146, cy, it.label, { size: 12.5, weight: 700, fill: c.deep, maxW: 130, maxLines: 2 })}
             {D.box(dx, y + 4, dw, rowH - 8, { fill: '#fff', stroke: c.mid, rx: 8 })}
             {D.ctext(dx + dw / 2, cy, it.detail || '—', { size: 11, fill: GREY, maxW: dw - 26, maxLines: 3 })}
             {hasVal ? D.box(vx, y + 4, vw, rowH - 8, { fill: c.p, stroke: c.p, rx: 8, fillOpacity: 0.12 }) : null}
             {hasVal ? D.ctext(vx + vw / 2, cy, it.value || '—', { size: 11.5, weight: 700, fill: c.deep, maxW: vw - 20, maxLines: 2 }) : null}
           </g>
         );
+        if (window.GlyphIcons) els.push(<g key={'ico' + i}>{window.GlyphIcons.draw(56, cy, 15, window.GlyphIcons.nameFor(it), c.deep, 2)}</g>);
       });
       return { h: t.y0 + n * (rowH + gap) - gap + 18, el: els };
     },
@@ -321,6 +333,7 @@
             {hasV ? D.ctext(294, ly + (hasD ? 40 : 21), it.value, { size: 10.5, weight: 700, fill: c.deep, anchor: 'end', maxW: 264, maxLines: 1 }) : null}
           </g>
         );
+        if (window.GlyphIcons) els.push(<g key={'ico' + i}>{window.GlyphIcons.draw(fx, cy, 16, window.GlyphIcons.nameFor(it), '#fff', 2)}</g>);
       });
       const b = topY + n * (layerH + lgap) - lgap;
       els.push(<g key="spout">{D.poly([[fx - 20, b], [fx + 20, b], [fx + 20, b + 22], [fx, b + 32], [fx - 20, b + 22]], { fill: A(n - 1).p, stroke: A(n - 1).p })}</g>);

@@ -130,6 +130,7 @@
       const R = 118, r = asPie ? 0 : 62;
       const cx = 190, cy = t.y0 + R + 16;
       const els = [t.el];
+      const I = window.GlyphIcons;
       let a = -90;
       IT.forEach((it, i) => {
         const c = A(i);
@@ -141,8 +142,15 @@
         a += sweep + 1.5;
         els.push(<g key={'seg' + i}>{D.path(d, { fill: c.p, stroke: '#fff', sw: 1.5, fillOpacity: pal.multi ? 0.95 : 0.4 + (0.6 * (n - i)) / n })}</g>);
         if (sweep > 24 && it.value) {
-          const [vx, vy] = polar(cx, cy, asPie ? R * 0.62 : (R + r) / 2, mid);
+          const [vx, vy] = polar(cx, cy, asPie ? R * 0.62 : r + 17, mid);
           els.push(<g key={'sv' + i}>{D.ctext(vx, vy, it.value, { size: 11, weight: 700, fill: '#fff', maxW: 60, maxLines: 1 })}</g>);
+        }
+        if (I && sweep > 16) {
+          const hasVal = sweep > 24 && it.value;
+          // separate icon (outer ring) from the value label (inner ring) so they don't overlap
+          const iRad = asPie ? (hasVal ? R * 0.82 : R * 0.6) : (hasVal ? R - 13 : (R + r) / 2);
+          const [ix, iy] = polar(cx, cy, iRad, mid);
+          els.push(<g key={'ico' + i}>{I.draw(ix, iy, 15, I.nameFor(it), '#fff', 2)}</g>);
         }
       });
       if (!asPie) els.push(<g key="ctr">{D.ctext(cx, cy, String(IT.length) + ' parts', { size: 12, weight: 600, fill: GREY, maxW: 100, maxLines: 1 })}</g>);
@@ -206,7 +214,8 @@
       const t = D.title(spec.title);
       const IT = spec.items, n = IT.length;
       const R = 172, r = 116;
-      const cx = 360, cy = t.y0 + R + 30;
+      const stag = n >= 6 ? 30 : 0; // alternate-label radius offset (see below)
+      const cx = 360, cy = t.y0 + R + 30 + stag; // extra room so staggered top labels clear the title
       const els = [t.el];
       const per = 180 / n;
       IT.forEach((it, i) => {
@@ -214,13 +223,16 @@
         const a1 = 180 + i * per + 1, a2 = 180 + (i + 1) * per - 1;
         els.push(<g key={'seg' + i}>{D.path(ringSeg(cx, cy, R, r, a1, a2), { fill: c.p, stroke: '#fff', sw: 1.5, fillOpacity: pal.multi ? 0.95 : 0.35 + (0.62 * i) / Math.max(1, n - 1) })}</g>);
         const mid = (a1 + a2) / 2;
-        const [lx, ly] = polar(cx, cy, R + 34, mid);
+        // alternate the label radius so neighbouring labels separate (they crowd
+        // horizontally near the top of the arc where the angular chord is shortest)
+        const lo = R + 30 + (i % 2) * stag;
+        const [lx, ly] = polar(cx, cy, lo, mid);
         const [tx, ty] = polar(cx, cy, R + 6, mid);
         const [sx, sy] = polar(cx, cy, R - 2, mid);
         els.push(<g key={'tick' + i}>{D.line(sx, sy, tx, ty, { stroke: c.mid, sw: 1.2 })}</g>);
         els.push(
           <g key={'it' + i}>
-            {D.ctext(lx, ly - (it.value ? 8 : 0), it.label, { size: 11.5, weight: 600, fill: c.deep, maxW: 116, maxLines: 2 })}
+            {D.ctext(lx, ly - (it.value ? 8 : 0), it.label, { size: 11.5, weight: 600, fill: c.deep, maxW: n >= 6 ? 104 : 116, maxLines: 2 })}
             {it.value ? D.ctext(lx, ly + 12, it.value, { size: 10.5, weight: 700, fill: c.p, maxW: 100, maxLines: 1 }) : null}
           </g>
         );
@@ -311,6 +323,7 @@
       const els = [t.el];
       els.push(<g key="axes">{D.line(x0, topY - 16, x0, botY + 14, { stroke: '#d8d4cd', sw: 1.4 })}{D.line(x1, topY - 16, x1, botY + 14, { stroke: '#d8d4cd', sw: 1.4 })}</g>);
       els.push(<g key="axlab">{D.ctext(x0, botY + 34, 'Now', { size: 11, weight: 700, fill: GREY, maxW: 80, maxLines: 1 })}{D.ctext(x1, botY + 34, 'Next', { size: 11, weight: 700, fill: GREY, maxW: 80, maxLines: 1 })}</g>);
+      const I = window.GlyphIcons;
       IT.forEach((it, i) => {
         const c = A(i);
         els.push(
@@ -322,6 +335,7 @@
             {D.ctext(x1 + 14, lR[i], rightText(it, pairs[i]), { size: 11.5, weight: 700, fill: c.p, anchor: 'start', maxW: 200, maxLines: 1 })}
           </g>
         );
+        if (I) els.push(<g key={'ico' + i}>{D.circle(x0, yL[i], 13, { fill: c.p, stroke: '#fff', sw: 1.5 })}{I.draw(x0, yL[i], 15, I.nameFor(it), '#fff', 2)}</g>);
       });
       return { h: botY + 56, el: els };
     },

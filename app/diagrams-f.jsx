@@ -47,10 +47,11 @@
             els.push(
               <g key={'it' + gi}>
                 {D.box(colX, y - nh / 2, nw, nh, { fill: c.soft, stroke: c.p, rx: 11 })}
-                {D.ctext(colX + nw / 2, y - (it.detail && nh > 40 ? 8 : 0), it.label, { size: 12.5, weight: 600, fill: c.deep, maxW: nw - 18, maxLines: 1 })}
-                {it.detail && nh > 40 ? D.ctext(colX + nw / 2, y + 12, it.detail, { size: 10, fill: GREY, maxW: nw - 18, maxLines: 1 }) : null}
+                {D.ctext(colX + nw / 2 + 12, y - (it.detail && nh > 40 ? 8 : 0), it.label, { size: 12.5, weight: 600, fill: c.deep, maxW: nw - 42, maxLines: 1 })}
+                {it.detail && nh > 40 ? D.ctext(colX + nw / 2 + 12, y + 12, it.detail, { size: 10, fill: GREY, maxW: nw - 42, maxLines: 1 }) : null}
               </g>
             );
+            els.push(<g key={'ico' + gi}>{I.draw(colX + 22, y, 16, I.nameFor(it), c.p, 2)}</g>);
           });
         }
         divergeSide(right, 1);
@@ -79,10 +80,11 @@
         els.push(
           <g key={'it' + i}>
             {D.box(colX, y - nh / 2, nw, nh, { fill: c.soft, stroke: c.p, rx: 11 })}
-            {D.ctext(colX + nw / 2, y - (it.detail && nh > 40 ? 8 : 0), it.label, { size: 12.5, weight: 600, fill: c.deep, maxW: nw - 18, maxLines: 1 })}
-            {it.detail && nh > 40 ? D.ctext(colX + nw / 2, y + 12, it.detail, { size: 10, fill: GREY, maxW: nw - 18, maxLines: 1 }) : null}
+            {D.ctext(colX + nw / 2 + 12, y - (it.detail && nh > 40 ? 8 : 0), it.label, { size: 12.5, weight: 600, fill: c.deep, maxW: nw - 42, maxLines: 1 })}
+            {it.detail && nh > 40 ? D.ctext(colX + nw / 2 + 12, y + 12, it.detail, { size: 10, fill: GREY, maxW: nw - 42, maxLines: 1 }) : null}
           </g>
         );
+        els.push(<g key={'ico' + i}>{I.draw(colX + 22, y, 16, I.nameFor(it), c.p, 2)}</g>);
       });
       return { h: t.y0 + bodyH + 20, el: els };
     },
@@ -161,6 +163,7 @@
             {it.value ? D.ctext(x + cw / 2, y + ch / 2 + 18, it.value, { size: 13, weight: 700, fill: dark ? 'rgba(255,255,255,0.85)' : c.p, maxW: cw - 20, maxLines: 1 }) : null}
           </g>
         );
+        els.push(<g key={'ico' + i}>{I.draw(x + 18, y + 18, 14, I.nameFor(it), dark ? '#fff' : c.deep, 1.8)}</g>);
       });
       return { h: t.y0 + rows * (ch + gap) - gap + 26, el: els };
     },
@@ -277,6 +280,8 @@
         const a1 = 180 + i * per + 1.5, a2 = 180 + (i + 1) * per - 1.5;
         els.push(<g key={'seg' + i}>{D.path(ringSeg(cx, cy, R, r, a1, a2), { fill: c.p, stroke: '#fff', sw: 1.4, fillOpacity: i === maxI ? 0.95 : 0.3 })}</g>);
         const mid = (a1 + a2) / 2;
+        const [ix, iy] = polar(cx, cy, (R + r) / 2, mid);
+        els.push(<g key={'ico' + i}>{D.circle(ix, iy, 13, { fill: c.p, stroke: '#fff', sw: 1.5 })}{I.draw(ix, iy, 15, I.nameFor(it), '#fff', 2)}</g>);
         const [lx, ly] = polar(cx, cy, R + 32, mid);
         els.push(
           <g key={'it' + i}>
@@ -379,10 +384,11 @@
                 {D.circle(ox + circleOff, y + bh / 2, 15, { fill: '#fff', stroke: c.p, sw: 2 })}
                 {D.ctext(ox + circleOff, y + bh / 2, String(gi + 1), { size: 11.5, weight: 700, fill: c.p })}
                 {D.line(ox + circleOff + 15, y + bh / 2, rx, y + bh / 2, { stroke: c.mid, sw: 1.4 })}
-                {D.ctext(rx + 14, y + bh / 2 - (it.detail ? 9 : 0), it.label, { size: 11, weight: 700, fill: filled ? '#fff' : c.deep, anchor: 'start', maxW: rw - notch - 22, maxLines: 1 })}
-                {it.detail ? D.ctext(rx + 14, y + bh / 2 + 13, it.detail, { size: 9.5, fill: filled ? 'rgba(255,255,255,0.78)' : GREY, anchor: 'start', maxW: rw - notch - 22, maxLines: 1 }) : null}
+                {D.ctext(rx + 30, y + bh / 2 - (it.detail ? 9 : 0), it.label, { size: 11, weight: 700, fill: filled ? '#fff' : c.deep, anchor: 'start', maxW: rw - notch - 38, maxLines: 1 })}
+                {it.detail ? D.ctext(rx + 30, y + bh / 2 + 13, it.detail, { size: 9.5, fill: filled ? 'rgba(255,255,255,0.78)' : GREY, anchor: 'start', maxW: rw - notch - 38, maxLines: 1 }) : null}
               </g>
             );
+            els.push(<g key={'ico' + gi}>{I.draw(rx + 16, y + bh / 2, 16, I.nameFor(it), filled ? '#fff' : c.p, 2)}</g>);
           });
         });
         const tallSide = half;
@@ -400,10 +406,11 @@
             {D.circle(52, y + bh / 2, 19, { fill: '#fff', stroke: c.p, sw: 2 })}
             {D.ctext(52, y + bh / 2, String(i + 1), { size: 14, weight: 700, fill: c.p })}
             {D.line(71, y + bh / 2, x, y + bh / 2, { stroke: c.mid, sw: 1.4 })}
-            {D.ctext(x + 22, y + bh / 2 - (it.detail ? 9 : 0), it.label, { size: 13, weight: 700, fill: pal.multi || i === 0 ? '#fff' : c.deep, anchor: 'start', maxW: w - notch - 40, maxLines: 1 })}
-            {it.detail ? D.ctext(x + 22, y + bh / 2 + 13, it.detail, { size: 10.5, fill: pal.multi || i === 0 ? 'rgba(255,255,255,0.78)' : GREY, anchor: 'start', maxW: w - notch - 40, maxLines: 1 }) : null}
+            {D.ctext(x + 40, y + bh / 2 - (it.detail ? 9 : 0), it.label, { size: 13, weight: 700, fill: pal.multi || i === 0 ? '#fff' : c.deep, anchor: 'start', maxW: w - notch - 58, maxLines: 1 })}
+            {it.detail ? D.ctext(x + 40, y + bh / 2 + 13, it.detail, { size: 10.5, fill: pal.multi || i === 0 ? 'rgba(255,255,255,0.78)' : GREY, anchor: 'start', maxW: w - notch - 58, maxLines: 1 }) : null}
           </g>
         );
+        els.push(<g key={'ico' + i}>{I.draw(x + 20, y + bh / 2, 18, I.nameFor(it), pal.multi || i === 0 ? '#fff' : c.p, 2)}</g>);
       });
       return { h: t.y0 + n * rowH + 8, el: els };
     },

@@ -50,16 +50,21 @@
         const gapA = left ? 24 : tip + 32;
         const gapB = left ? tip - 32 : W - 24;
         const cxT = (gapA + gapB) / 2, mw = Math.max(60, gapB - gapA - 6);
+        // shift the band label away from the icon side so they don't collide on narrow bands
+        const labelCx = fx + (left ? 20 : -20);
+        const labelMaxW = Math.max(72, w - 74);
         els.push(
           <g key={'it' + i}>
             {D.poly(body, { fill: c.soft, stroke: c.p })}
-            {D.ctext(fx, cy, it.label, { size: 13, weight: 700, fill: c.deep, maxW: w - 30, maxLines: 2 })}
+            {D.ctext(labelCx, cy, it.label, { size: 13, weight: 700, fill: c.deep, maxW: labelMaxW, maxLines: 2 })}
             {D.line(tip + (left ? -4 : 4), cy, sx, cy, { stroke: c.p, sw: 1.4 })}
             {D.poly([[sx - 5, cy], [sx, cy - 5], [sx + 5, cy], [sx, cy + 5]], { fill: c.p, stroke: c.p })}
             {it.value ? D.ctext(cxT, cy - 28, it.value, { size: 12, weight: 700, fill: c.deep, maxW: mw, maxLines: 1 }) : null}
             {it.detail ? D.ctext(cxT, cy + (it.value ? 14 : 0) - 14, it.detail, { size: 10, fill: GREY, maxW: mw, maxLines: it.value ? 2 : 3 }) : null}
           </g>
         );
+        const icoX = left ? b1 + 22 : b2 - 22;
+        els.push(<g key={'ico' + i}>{D.circle(icoX, cy, 14, { fill: c.p, stroke: '#fff', sw: 1.5 })}{I.draw(icoX, cy, 16, I.nameFor(it), '#fff', 2)}</g>);
       });
       return { h: bottomY + 18, el: els };
     },
@@ -98,6 +103,7 @@
               {D.text(636, y + 52, String(i + 1), { size: 44, weight: 800, fill: c.mid, maxW: 70, maxLines: 1 })}
             </g>
           );
+          els.push(<g key={'ico' + i}>{D.circle(fx, cy, 16, { fill: c.p, stroke: '#fff', sw: 1.8 })}{I.draw(fx, cy, 16, I.nameFor(it), '#fff', 2)}</g>);
         });
         return { h: bottomY + 20, el: els };
       }
@@ -120,6 +126,7 @@
             {D.poly([[684, y + 69], [690, y + 74], [684, y + 79], [678, y + 74]], { fill: c.p, stroke: c.p })}
           </g>
         );
+        els.push(<g key={'ico' + i}>{I.draw(cx, y + 18, 16, I.nameFor(it), '#fff', 2)}</g>);
       });
       return { h: t.y0 + n * rowH + 16, el: els };
     },
@@ -268,13 +275,12 @@
             els.push(
               <g key={'it' + gi}>
                 {D.box(bx, y, bannerW, rowH, { fill: c.soft, stroke: c.p, rx: 10 })}
-                {D.circle(circX, cy, 12, { fill: '#fff', stroke: c.p, sw: 1.6 })}
-                {D.ctext(circX, cy, String(gi + 1), { size: 10, weight: 700, fill: c.deep })}
                 {D.text(textX, oneLine ? cy + 5 : y + 26, it.label, { size: 11, weight: 700, fill: c.deep, maxW: it.value ? textMaxW - 52 : textMaxW, maxLines: 1 })}
                 {it.detail ? D.text(textX, y + 47, it.detail, { size: 9.5, fill: GREY, maxW: it.value ? textMaxW - 52 : textMaxW, maxLines: 1 }) : null}
                 {it.value ? D.ctext(bx + bannerW - 8, cy, it.value, { size: 10.5, weight: 700, fill: c.deep, anchor: 'end', maxW: 60, maxLines: 1 }) : null}
               </g>
             );
+            els.push(<g key={'ico' + gi}>{D.circle(circX, cy, 12, { fill: c.p, stroke: '#fff', sw: 1.6 })}{I.draw(circX, cy, 14, I.nameFor(it), '#fff', 2)}</g>);
           });
         });
         // Height determined by taller side (left, which has ceil(n/2) items)
@@ -305,13 +311,12 @@
         els.push(
           <g key={'it' + i}>
             {D.box(140, y, 556, rowH, { fill: c.soft, stroke: c.p, rx: 12 })}
-            {D.circle(174, cy, 14, { fill: '#fff', stroke: c.p, sw: 1.6 })}
-            {D.ctext(174, cy, String(i + 1), { size: 11.5, weight: 700, fill: c.deep })}
             {D.text(202, oneLine ? cy + 5 : y + 26, it.label, { size: 12.5, weight: 700, fill: c.deep, maxW: it.value ? 380 : 466, maxLines: 1 })}
             {it.detail ? D.text(202, y + 47, it.detail, { size: 10.5, fill: GREY, maxW: it.value ? 380 : 466, maxLines: 1 }) : null}
             {it.value ? D.ctext(676, cy, it.value, { size: 12, weight: 700, fill: c.deep, anchor: 'end', maxW: 84, maxLines: 1 }) : null}
           </g>
         );
+        els.push(<g key={'ico' + i}>{D.circle(174, cy, 14, { fill: c.p, stroke: '#fff', sw: 1.6 })}{I.draw(174, cy, 16, I.nameFor(it), '#fff', 2)}</g>);
       });
       return { h: rowsBottom + 56, el: els };
     },

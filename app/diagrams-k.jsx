@@ -78,6 +78,7 @@
             {it.value ? D.ctext(x, cy + s * (up ? 104 : 96), it.value, { size: 10, weight: 700, fill: c.p, maxW, maxLines: 1 }) : null}
           </g>
         );
+        els.push(<g key={'ico' + i}>{I ? I.draw(x, cy, 14, I.nameFor(it), c.p, 2) : null}</g>);
       });
       return { h: cy + 124, el: els };
     },
@@ -236,10 +237,11 @@
             {D.box(x, yb - bh + 12, bw, 6, { fill: c.p, stroke: c.p })}
             {D.box(x, yb - bh + 24, bw, 6, { fill: c.p, stroke: c.p })}
             <g transform={`rotate(-90 ${cx} ${cyS})`}>
-              {D.ctext(cx, cyS + 4, it.label, { size: 12, weight: 700, fill: c.deep, maxW: bh - 56, maxLines: 1 })}
+              {D.ctext(cx, cyS + 4, it.label, { size: 12, weight: 700, fill: c.deep, maxW: bh - 80, maxLines: 1 })}
             </g>
           </g>
         );
+        els.push(<g key={'ico' + i} transform={tilt ? `rotate(${tilt} ${x + bw} ${yb})` : undefined}>{I ? I.draw(cx, yb - 20, 17, I.nameFor(it), c.deep, 2) : null}</g>);
         if (it.value) els.push(<g key={'v' + i}>{D.ctext(cx, yb + 26, it.value, { size: 10.5, weight: 700, fill: c.deep, maxW: step - 8, maxLines: 1 })}</g>);
         if (it.detail) els.push(<g key={'d' + i}>{D.ctext(cx, yb + (it.value ? 48 : 30), it.detail, { size: 9, fill: GREY, maxW: step - 6, maxLines: 3 })}</g>);
       });

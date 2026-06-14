@@ -241,12 +241,13 @@
       IT.forEach((it, i) => {
         const c = A(i);
         const x = n === 1 ? 340 : px(i), y = n === 1 ? t.y0 + 200 : py(i);
+        const xl = Math.max(78, Math.min(x, 642)); // keep the centred label inside the frame
         els.push(
           <g key={'it' + i}>
             {D.circle(x, y, 21, { fill: c.soft, stroke: c.p, sw: 2.2 })}
             {D.ctext(x, y, String(i + 1), { size: 13, weight: 700, fill: c.deep })}
-            {D.ctext(x, y + 42, it.label, { size: 11.5, weight: 700, fill: c.deep, maxW: 150, maxLines: 1 })}
-            {it.detail ? D.ctext(x, y + 64, it.detail, { size: 9.5, fill: GREY, maxW: 150, maxLines: 2 }) : null}
+            {D.ctext(xl, y + 42, it.label, { size: 11.5, weight: 700, fill: c.deep, maxW: 144, maxLines: 1 })}
+            {it.detail ? D.ctext(xl, y + 64, it.detail, { size: 9.5, fill: GREY, maxW: 144, maxLines: 2 }) : null}
           </g>
         );
       });
@@ -271,14 +272,16 @@
       const drawLayer = (it, i, y, w1, w2) => {
         const c = A(i);
         const cy = y + layerH / 2;
+        const ix = cx - Math.min(w1, w2) / 2 + 18;
         els.push(
           <g key={'it' + i}>
             {D.poly([[cx - w1 / 2, y], [cx + w1 / 2, y], [cx + w2 / 2, y + layerH], [cx - w2 / 2, y + layerH]], { fill: c.p, stroke: c.p, fillOpacity: 0.16 })}
-            {D.ctext(cx, cy, it.label, { size: 12, weight: 700, fill: c.deep, maxW: Math.min(w1, w2) - 18, maxLines: 2 })}
+            {D.ctext(cx + 16, cy, it.label, { size: 12, weight: 700, fill: c.deep, maxW: Math.max(54, Math.min(w1, w2) - 52), maxLines: 2 })}
             {it.detail ? D.ctext(cx + 178 + 90, cy, it.detail, { size: 9.5, fill: GREY, maxW: 172, maxLines: 3 }) : null}
             {it.detail ? D.line(cx + Math.max(w1, w2) / 2 + 8, cy, cx + 170, cy, { stroke: GREY, sw: 1, dash: '3 5' }) : null}
           </g>
         );
+        if (I) els.push(<g key={'ico' + i}>{D.circle(ix, cy, 13, { fill: c.p, stroke: '#fff', sw: 1.5 })}{I.draw(ix, cy, 16, I.nameFor(it), '#fff', 2)}</g>);
       };
       for (let i = 0; i < nT; i++) drawLayer(IT[i], i, t.y0 + 8 + i * (layerH + gap), wT(i), wT(i + 1));
       const waistY = t.y0 + 8 + nT * (layerH + gap) + 4;

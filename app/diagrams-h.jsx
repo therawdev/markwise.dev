@@ -100,6 +100,7 @@
             {it.detail ? D.ctext(lx - 16, my, it.detail, { size: 10.5, fill: GREY, anchor: 'end', maxW: 164, maxLines: 3 }) : null}
           </g>
         );
+        els.push(<g key={'ico' + i}>{I.draw(lx + 38, my, 18, I.nameFor(it), c.p, 2)}</g>);
       });
       return { h: t.y0 + bodyH + 16, el: els };
     },
@@ -125,8 +126,7 @@
         els.push(
           <g key={'it' + i}>
             {D.circle(cx, cy, 27, { fill: '#fff', stroke: c.p, sw: 2.2 })}
-            {D.circle(cx, cy, 17, { fill: c.soft, stroke: c.p, sw: 1.6 })}
-            {D.ctext(cx, cy, String(i + 1), { size: 14, weight: 700, fill: c.deep })}
+            {D.circle(cx, cy, 17, { fill: c.p, stroke: c.p, sw: 1.6 })}
             {D.line(right ? cx + 30 : cx - 30, cy, right ? cx + 64 : cx - 64, cy, { stroke: c.p, sw: 1.6 })}
             {D.circle(right ? cx + 66 : cx - 66, cy, 3, { fill: c.p, stroke: c.p })}
             {D.ctext(tx, cy - (it.detail ? 11 : 0), it.label, { size: 13.5, weight: 700, fill: c.deep, anchor, maxW: 250, maxLines: 2 })}
@@ -140,6 +140,7 @@
             ) : null}
           </g>
         );
+        els.push(<g key={'ico' + i}>{I.draw(cx, cy, 16, I.nameFor(it), '#fff', 2)}</g>);
       });
       return { h: t.y0 + 34 + (n - 1) * gap + 56, el: els };
     },
@@ -228,13 +229,14 @@
           els.push(
             <g key={'it' + i}>
               {D.box(x, y, cw, hh, { fill: c.soft, stroke: c.p, rx: 10 })}
-              {D.ctext(x + cw / 2, y + hh / 2, it.label, { size: 13.5, weight: 700, fill: c.deep, maxW: cw - 20, maxLines: 1 })}
+              {D.ctext(x + cw / 2 + 13, y + hh / 2, it.label, { size: 13.5, weight: 700, fill: c.deep, maxW: cw - 48, maxLines: 1 })}
               {D.box(x, y + hh + 8, cw, dh, { fill: c.p, stroke: c.p, rx: 10, fillOpacity: 0.07 })}
               {D.ctext(x + cw / 2, y + hh + 8 + dh / 2, it.detail || '—', { size: 11, fill: c.deep, maxW: cw - 22, maxLines: 4 })}
               {hasVal ? D.box(x, y + hh + dh + 24, cw, vh, { fill: '#fff', stroke: c.mid, rx: 10 }) : null}
               {hasVal ? D.ctext(x + cw / 2, y + hh + dh + 24 + vh / 2, it.value || '—', { size: 12, weight: 700, fill: c.p, maxW: cw - 20, maxLines: 1 }) : null}
             </g>
           );
+          els.push(<g key={'ico' + i}>{I.draw(x + 22, y + hh / 2, 16, I.nameFor(it), c.p, 2)}</g>);
         });
         y += hh + 8 + dh + (hasVal ? 24 + vh : 0) + 22;
       }
