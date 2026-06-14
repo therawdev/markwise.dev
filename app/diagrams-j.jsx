@@ -1,6 +1,7 @@
 // Glyph — diagram renderers, part J: funnelarrows, discfunnel, sidehub, gaugerow, pencil
 (function () {
   const { GREY, arcPath, palAt, numOf } = window.GlyphDraw;
+  const I = window.GlyphIcons;
   window.DIAGRAMS = window.DIAGRAMS || {};
   const D9 = window.DIAGRAMS;
   const W = 720;
@@ -153,7 +154,12 @@
         const ang = -90 + (i * 360) / n;
         const ox = cx + 122 * Math.cos((ang * Math.PI) / 180);
         const oy = cy + 122 * Math.sin((ang * Math.PI) / 180);
-        els.push(<g key={'od' + i}>{D.circle(ox, oy, 12, { fill: '#fff', stroke: A(i).p, sw: 1.6 })}</g>);
+        els.push(
+          <g key={'od' + i}>
+            {D.circle(ox, oy, 16, { fill: '#fff', stroke: A(i).p, sw: 1.6 })}
+            {I ? I.draw(ox, oy, 18, I.nameFor(it), A(i).p, 2) : null}
+          </g>
+        );
       });
       IT.forEach((it, i) => {
         const c = A(i);

@@ -103,5 +103,10 @@
     // free-text fallback → built-in keyword icon
     return <g transform={tf}><path d={P[pick(nameOrText)]} fill="none" stroke={color} strokeWidth={sw || 1.9} strokeLinecap="round" strokeLinejoin="round" /></g>;
   }
-  window.GlyphIcons = { draw, pick, PATHS: P, lucideNodes, lucideNames, hasLucide: () => !!lucideRegistry() };
+  // the icon name to draw for a spec item: the AI's explicit `it.icon` (a Lucide name),
+  // else keyword-match its label+detail text to a built-in icon
+  function nameFor(it) {
+    return (it && it.icon) || (((it && it.label) || '') + ' ' + ((it && it.detail) || '')).trim();
+  }
+  window.GlyphIcons = { draw, pick, PATHS: P, lucideNodes, lucideNames, nameFor, hasLucide: () => !!lucideRegistry() };
 })();

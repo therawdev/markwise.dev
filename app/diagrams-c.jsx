@@ -1,6 +1,7 @@
 // Glyph — diagram renderers, part C: chevron, kanban, cards, hub, orbit, honeycomb, bracket, tree, fishbone, gantt
 (function () {
   const { GREY, polar, palAt } = window.GlyphDraw;
+  const I = window.GlyphIcons;
   window.DIAGRAMS = window.DIAGRAMS || {};
   const D9 = window.DIAGRAMS;
   const W = 720;
@@ -33,6 +34,7 @@
         els.push(
           <g key={'it' + i}>
             {D.poly(pts, { fill: solid ? c.p : c.soft, stroke: c.p })}
+            {I.draw(x + (k === 0 && r === 0 ? 16 : d + 14), y + 18, 18, I.nameFor(it), solid ? '#fff' : c.deep, 2)}
             {D.ctext(x + cw / 2 + d / 2, y + bh / 2, it.label, { size: 13, weight: 600, fill: solid ? '#fff' : c.deep, maxW: cw - 14, maxLines: 2 })}
             {it.detail ? D.ctext(x + cw / 2 + d / 2, y + bh + 16, it.detail, { size: 10, fill: GREY, maxW: cw + 4, maxLines: 1 }) : null}
           </g>
@@ -66,7 +68,8 @@
           <g key={'it' + i}>
             {D.box(x, y + hh - 8, cw, bodyH + 8, { fill: c.soft, stroke: c.mid, rx: 12 })}
             {D.box(x, y, cw, hh, { fill: c.p, stroke: c.p, rx: 12 })}
-            {D.ctext(x + cw / 2, y + hh / 2, it.label, { size: 12.5, weight: 700, fill: '#fff', maxW: cw - 14, maxLines: 2 })}
+            {I.draw(x + 18, y + hh / 2, 18, I.nameFor(it), '#fff', 2)}
+            {D.ctext(x + cw / 2 + 12, y + hh / 2, it.label, { size: 12.5, weight: 700, fill: '#fff', maxW: cw - 14 - 24, maxLines: 2 })}
             {it.detail ? D.ctext(x + cw / 2, y + hh + bodyH / 2 - (it.value ? 10 : 0), it.detail, { size: 10.5, fill: c.deep, maxW: cw - 18, maxLines: 3 }) : null}
             {it.value ? D.ctext(x + cw / 2, y + hh + bodyH - 18, it.value, { size: 13, weight: 700, fill: c.p, maxW: cw - 14, maxLines: 1 }) : null}
           </g>
@@ -94,7 +97,8 @@
           <g key={'it' + i}>
             {D.box(x, y, cw, ch, { fill: '#fff', stroke: c.mid, rx: 12 })}
             {D.box(x, y, 5, ch, { fill: c.p, stroke: 'none', rx: 2.5 })}
-            {D.text(x + 18, y + 30, it.label, { size: 13.5, weight: 700, fill: c.deep, maxW: cw - 34 - (it.value ? 50 : 0), maxLines: 2 })}
+            {!it.value ? I.draw(x + cw - 20, y + 22, 19, I.nameFor(it), c.p, 2) : null}
+            {D.text(x + 18, y + 30, it.label, { size: 13.5, weight: 700, fill: c.deep, maxW: cw - 34 - (it.value ? 50 : 24), maxLines: 2 })}
             {it.detail ? D.text(x + 18, y + ch - 22, it.detail, { size: 10.5, fill: GREY, maxW: cw - 34, maxLines: 2 }) : null}
             {it.value ? D.text(x + cw - 14, y + 30, it.value, { size: 13, weight: 700, fill: c.p, anchor: 'end', maxW: 70, maxLines: 1 }) : null}
           </g>
@@ -133,7 +137,8 @@
         els.push(
           <g key={'it' + i}>
             {D.box(x - nw / 2, y - nh / 2, nw, nh, { fill: c.soft, stroke: c.p, rx: 12 })}
-            {D.ctext(x, y, it.label, { size: 12, weight: 600, fill: c.deep, maxW: nw - 14, maxLines: 2 })}
+            {I.draw(x - nw / 2 + 18, y, 18, I.nameFor(it), c.p, 2)}
+            {D.ctext(x + 13, y, it.label, { size: 12, weight: 600, fill: c.deep, maxW: nw - 14 - 26, maxLines: 2 })}
           </g>
         );
       });
@@ -207,7 +212,8 @@
         els.push(
           <g key={'it' + i}>
             {D.poly(pts, { fill: solid ? c.p : c.soft, stroke: c.p })}
-            {D.ctext(cx, cy - (it.value ? 8 : 0), it.label, { size: 11.5, weight: 600, fill: solid ? '#fff' : c.deep, maxW: R * 1.5, maxLines: 3 })}
+            {R >= 46 ? I.draw(cx, cy - R * 0.42, Math.min(20, R * 0.34), I.nameFor(it), solid ? '#fff' : c.p, 2) : null}
+            {D.ctext(cx, cy - (it.value ? 8 : 0) + (R >= 46 ? 7 : 0), it.label, { size: 11.5, weight: 600, fill: solid ? '#fff' : c.deep, maxW: R * 1.5, maxLines: 3 })}
             {it.value ? D.ctext(cx, cy + 22, it.value, { size: 11, weight: 700, fill: solid ? 'rgba(255,255,255,0.8)' : c.p, maxW: R * 1.4, maxLines: 1 }) : null}
           </g>
         );
@@ -257,7 +263,8 @@
           const vertX = spineX + dir * 40;               // brace vertex — same 40px curl as the normal bracket
           const tieX = cx + dir * (rootW / 2);           // tie starts at root edge
           const dotX = vertX + dir * 28;
-          const labelX = dotX + dir * 18;
+          const icoX = dotX + dir * 16;
+          const labelX = dotX + dir * 36;
           const anchor = dir > 0 ? 'start' : 'end';
           const farX = dir > 0 ? W - 24 : 24;            // outer edge for value / wrap budget
           const maxLabelW = Math.abs(farX - labelX) - 40;
@@ -271,6 +278,7 @@
             els.push(
               <g key={'it' + gi}>
                 {D.circle(dotX, y, 5, { fill: c.p, stroke: c.p })}
+                {I.draw(icoX, y, 17, I.nameFor(it), c.p, 2)}
                 {D.ctext(labelX, y - (it.detail ? 9 : 0), it.label, { size: 12, weight: 600, fill: c.deep, anchor, maxW: maxLabelW, maxLines: 1 })}
                 {it.detail ? D.ctext(labelX, y + 12, it.detail, { size: 10, fill: GREY, anchor, maxW: maxLabelW, maxLines: 1 }) : null}
                 {it.value ? D.ctext(farX, y, it.value, { size: 11, weight: 700, fill: c.p, anchor: dir > 0 ? 'end' : 'start', maxW: 72, maxLines: 1 }) : null}
@@ -302,8 +310,9 @@
         els.push(
           <g key={'it' + i}>
             {D.circle(336, y, 5, { fill: c.p, stroke: c.p })}
-            {D.ctext(354, y - (it.detail ? 9 : 0), it.label, { size: 13.5, weight: 600, fill: c.deep, anchor: 'start', maxW: 250, maxLines: 1 })}
-            {it.detail ? D.ctext(354, y + 12, it.detail, { size: 10.5, fill: GREY, anchor: 'start', maxW: 300, maxLines: 1 }) : null}
+            {I.draw(360, y, 19, I.nameFor(it), c.p, 2)}
+            {D.ctext(378, y - (it.detail ? 9 : 0), it.label, { size: 13.5, weight: 600, fill: c.deep, anchor: 'start', maxW: 226, maxLines: 1 })}
+            {it.detail ? D.ctext(378, y + 12, it.detail, { size: 10.5, fill: GREY, anchor: 'start', maxW: 276, maxLines: 1 }) : null}
             {it.value ? D.ctext(W - 30, y, it.value, { size: 13, weight: 700, fill: c.p, anchor: 'end', maxW: 80, maxLines: 1 }) : null}
           </g>
         );
@@ -344,8 +353,9 @@
           els.push(
             <g key={'it' + i}>
               {D.box(ibx, y - ih / 2, ibw, ih, { fill: c.soft, stroke: c.p, rx: 8 })}
-              {D.ctext(ibx + 14, y - (it.detail ? 8 : 0), it.label, { size: 12.5, weight: 600, fill: c.deep, anchor: 'start', maxW: ibw - 28 - (it.value ? 60 : 0), maxLines: 1 })}
-              {it.detail ? D.ctext(ibx + 14, y + 11, it.detail, { size: 9.5, fill: GREY, anchor: 'start', maxW: ibw - 28, maxLines: 1 }) : null}
+              {I.draw(ibx + 17, y, 18, I.nameFor(it), c.p, 2)}
+              {D.ctext(ibx + 34, y - (it.detail ? 8 : 0), it.label, { size: 12.5, weight: 600, fill: c.deep, anchor: 'start', maxW: ibw - 48 - (it.value ? 60 : 0), maxLines: 1 })}
+              {it.detail ? D.ctext(ibx + 34, y + 11, it.detail, { size: 9.5, fill: GREY, anchor: 'start', maxW: ibw - 48, maxLines: 1 }) : null}
               {it.value ? D.ctext(ibx + ibw - 12, y, it.value, { size: 11.5, weight: 700, fill: c.p, anchor: 'end', maxW: 56, maxLines: 1 }) : null}
             </g>
           );
@@ -371,7 +381,7 @@
           const c = A(i), r = Math.floor(i / cols), k = i % cols, x = 24 + k * (nw + gap), y = busY + 16 + r * (nh + rowGap);
           if (r === 0) els.push(<g key={'dl' + i}>{D.line(x + nw / 2, busY, x + nw / 2, y, { stroke: '#c9c4bb', sw: 1.8 })}</g>);
           else els.push(<g key={'dl' + i}>{D.line(x + nw / 2, y - rowGap + nh, x + nw / 2, y, { stroke: '#c9c4bb', sw: 1.8, dash: '3 4' })}</g>);
-          els.push(<g key={'it' + i}>{D.box(x, y, nw, nh, { fill: c.soft, stroke: c.p, rx: 10 })}{D.ctext(x + nw / 2, y + nh / 2 - (it.detail ? 9 : 0), it.label, { size: 12, weight: 600, fill: c.deep, maxW: nw - 14, maxLines: 2 })}{it.detail ? D.ctext(x + nw / 2, y + nh / 2 + 14, it.detail, { size: 9.5, fill: GREY, maxW: nw - 14, maxLines: 1 }) : null}</g>);
+          els.push(<g key={'it' + i}>{D.box(x, y, nw, nh, { fill: c.soft, stroke: c.p, rx: 10 })}{I.draw(x + 18, y + 16, 17, I.nameFor(it), c.p, 2)}{D.ctext(x + nw / 2 + 11, y + nh / 2 - (it.detail ? 9 : 0), it.label, { size: 12, weight: 600, fill: c.deep, maxW: nw - 14 - 22, maxLines: 2 })}{it.detail ? D.ctext(x + nw / 2 + 11, y + nh / 2 + 14, it.detail, { size: 9.5, fill: GREY, maxW: nw - 14 - 22, maxLines: 1 }) : null}</g>);
         });
         return { h: busY + 16 + rows * (nh + rowGap) - rowGap + 26, el: els };
       }
@@ -400,8 +410,9 @@
           els.push(
             <g key={'it' + gi}>
               {D.box(bx, y - nh / 2, nw, nh, { fill: c.soft, stroke: c.p, rx: 10 })}
-              {D.ctext(bx + nw / 2, y - (it.detail ? 9 : 0), it.label, { size: 12, weight: 600, fill: c.deep, maxW: nw - 14, maxLines: it.detail ? 1 : 2 })}
-              {it.detail ? D.ctext(bx + nw / 2, y + 12, it.detail, { size: 9.5, fill: GREY, maxW: nw - 14, maxLines: 1 }) : null}
+              {I.draw(bx + 19, y, 19, I.nameFor(it), c.p, 2)}
+              {D.ctext(bx + nw / 2 + 13, y - (it.detail ? 9 : 0), it.label, { size: 12, weight: 600, fill: c.deep, maxW: nw - 14 - 26, maxLines: it.detail ? 1 : 2 })}
+              {it.detail ? D.ctext(bx + nw / 2 + 13, y + 12, it.detail, { size: 9.5, fill: GREY, maxW: nw - 14 - 26, maxLines: 1 }) : null}
             </g>
           );
         });

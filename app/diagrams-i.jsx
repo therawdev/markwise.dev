@@ -150,8 +150,9 @@
             {D.circle(dx, dy, 7, { fill: c.p, stroke: c.p })}
             {D.circle(gx, gy, 15, { fill: '#fff', stroke: c.p, sw: 1.8 })}
             {D.ctext(gx, gy, String(i + 1), { size: 12, weight: 700, fill: c.deep })}
-            {D.ctext(bx, by - (it.detail ? 16 : 0), it.label, { size: 12.5, weight: 700, fill: c.deep, maxW: bw - 24, maxLines: 2 })}
-            {it.detail ? D.ctext(bx, by + 20, it.detail, { size: 10, fill: GREY, maxW: bw - 22, maxLines: 2 }) : null}
+            {window.GlyphIcons ? window.GlyphIcons.draw(bx, by - bh / 2 + 22, 24, window.GlyphIcons.nameFor(it), c.p, 2) : null}
+            {D.ctext(bx, by - (it.detail ? 10 : 2), it.label, { size: 12.5, weight: 700, fill: c.deep, maxW: bw - 24, maxLines: 2 })}
+            {it.detail ? D.ctext(bx, by + 24, it.detail, { size: 10, fill: GREY, maxW: bw - 22, maxLines: 2 }) : null}
           </g>
         );
       });
@@ -355,8 +356,9 @@
             {D.box(bx, y + 6, bw, rowH - 12, { fill: c.soft, stroke: c.p, rx: 8 })}
             {D.circle(bx, cy, 17, { fill: '#fff', stroke: c.p, sw: 1.8 })}
             {D.ctext(bx, cy, String(i + 1).padStart(2, '0'), { size: 11.5, weight: 700, fill: c.deep })}
-            {D.text(bx + 30, y + 28, it.label, { size: 12.5, weight: 700, fill: c.deep, maxW: bw - 44 - (it.value ? 76 : 0), maxLines: 1 })}
-            {it.detail ? D.text(bx + 30, y + 49, it.detail, { size: 10, fill: GREY, maxW: bw - 44, maxLines: 2 }) : null}
+            {window.GlyphIcons ? window.GlyphIcons.draw(bx + bw - 22, cy + (it.value ? 14 : 0), 20, window.GlyphIcons.nameFor(it), c.p, 2) : null}
+            {D.text(bx + 30, y + 28, it.label, { size: 12.5, weight: 700, fill: c.deep, maxW: bw - 44 - 28 - (it.value ? 76 : 0), maxLines: 1 })}
+            {it.detail ? D.text(bx + 30, y + 49, it.detail, { size: 10, fill: GREY, maxW: bw - 44 - 28, maxLines: 2 }) : null}
             {it.value ? D.ctext(bx + bw - 14, y + 24, it.value, { size: 11, weight: 700, fill: c.deep, anchor: 'end', maxW: 90, maxLines: 1 }) : null}
           </g>
         );

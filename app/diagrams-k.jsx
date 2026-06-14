@@ -1,6 +1,7 @@
 // Glyph — diagram renderers, part K: snake, metro, filmstrip, sticky, bento, shelf
 (function () {
   const { GREY, INK, palAt } = window.GlyphDraw;
+  const I = window.GlyphIcons;
   window.DIAGRAMS = window.DIAGRAMS || {};
   const D9 = window.DIAGRAMS;
   const W = 720;
@@ -141,6 +142,7 @@
             {D.box(x, y, sw, sh, { fill: c.soft, stroke: c.p, sw: 1, rx: 3 })}
             {D.poly([[x + sw - 26, y + sh], [x + sw, y + sh - 26], [x + sw, y + sh], ], { fill: c.mid, stroke: c.p, sw: 0.8 })}
             {D.box(cx - 26, y - 7, 52, 15, { fill: GREY, stroke: 'none', rx: 2, fillOpacity: 0.25 })}
+            {I ? I.draw(x + 22, y + 24, 20, I.nameFor(it), c.p, 2) : null}
             {D.ctext(cx, y + 46, it.label, { size: 13, weight: 700, fill: c.deep, maxW: sw - 32, maxLines: 2 })}
             {it.detail ? D.ctext(cx, y + 94, it.detail, { size: 10, fill: GREY, maxW: sw - 34, maxLines: 3 }) : null}
             {it.value ? D.ctext(cx, y + sh - 22, it.value, { size: 11, weight: 700, fill: c.deep, maxW: sw - 40, maxLines: 1 }) : null}
@@ -168,6 +170,7 @@
           els.push(
             <g key={'it' + i}>
               {D.box(x, t.y0, w, 200, { fill: c.p, stroke: c.p, rx: 16, fillOpacity: 0.08 })}
+              {I ? I.draw(x + w - 30, t.y0 + 32, 24, I.nameFor(it), c.p, 2) : null}
               {D.text(x + 24, t.y0 + 42, it.label, { size: 16, weight: 700, fill: c.deep, maxW: w - 48, maxLines: 2 })}
               {it.detail ? D.text(x + 24, t.y0 + 86, it.detail, { size: 11, fill: GREY, maxW: w - 48, maxLines: 3 }) : null}
               {it.value ? D.text(x + 24, t.y0 + 170, it.value, { size: 18, weight: 700, fill: c.p, maxW: w - 48, maxLines: 1 }) : null}
@@ -183,6 +186,7 @@
       els.push(
         <g key="big">
           {D.box(24, t.y0, 332, bh, { fill: bc.p, stroke: bc.p, rx: 16, fillOpacity: 0.1 })}
+          {I ? I.draw(326, t.y0 + 36, 28, I.nameFor(big), bc.p, 2) : null}
           {big.value ? D.text(48, t.y0 + 56, big.value, { size: 26, weight: 800, fill: bc.p, maxW: 280, maxLines: 1 }) : null}
           {D.text(48, t.y0 + (big.value ? 96 : 52), big.label, { size: 17, weight: 700, fill: bc.deep, maxW: 284, maxLines: 2 })}
           {big.detail ? D.text(48, t.y0 + (big.value ? 138 : 94), big.detail, { size: 11, fill: GREY, maxW: 284, maxLines: 4 }) : null}
@@ -195,7 +199,8 @@
         els.push(
           <g key={'it' + j}>
             {D.box(x, y, 158, 110, { fill: c.p, stroke: c.p, rx: 14, fillOpacity: 0.08 })}
-            {D.text(x + 16, y + 30, it.label, { size: 12, weight: 700, fill: c.deep, maxW: it.value ? 84 : 128, maxLines: 1 })}
+            {I && !it.value ? I.draw(x + 158 - 24, y + 24, 18, I.nameFor(it), c.p, 2) : null}
+            {D.text(x + 16, y + 30, it.label, { size: 12, weight: 700, fill: c.deep, maxW: it.value ? 84 : 110, maxLines: 1 })}
             {it.value ? D.ctext(x + 158 - 14, y + 26, it.value, { size: 11, weight: 700, fill: c.p, anchor: 'end', maxW: 54, maxLines: 1 }) : null}
             {it.detail ? D.text(x + 16, y + 54, it.detail, { size: 9.5, fill: GREY, maxW: 128, maxLines: 3 }) : null}
           </g>

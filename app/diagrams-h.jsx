@@ -1,6 +1,7 @@
 // Glyph — diagram renderers, part H: ringcards, cascade, milestones, gridcycle, table, versus
 (function () {
   const { GREY, polar, arcPath, palAt, numOf } = window.GlyphDraw;
+  const I = window.GlyphIcons;
   window.DIAGRAMS = window.DIAGRAMS || {};
   const D9 = window.DIAGRAMS;
   const W = 720;
@@ -42,6 +43,7 @@
         els.push(
           <g key={'it' + i}>
             {D.box(x, y, cw, ch, { fill: c.soft, stroke: c.p, rx: 16 })}
+            {I.draw(x + 24, y + 24, 20, I.nameFor(it), c.p, 2)}
             {D.circle(cx, ringCy, rr, { fill: 'none', stroke: c.mid, sw: 7 })}
             {pct >= 99.5
               ? D.circle(cx, ringCy, rr, { fill: 'none', stroke: c.p, sw: 7 })
@@ -165,6 +167,7 @@
         els.push(
           <g key={'it' + i}>
             {D.box(x, y, gw, gh, { fill: c.p, stroke: c.p, rx: 2, fillOpacity: 0.1 })}
+            {I.draw(x + gw - 26, y + 30, 22, I.nameFor(it), c.p, 2)}
             {D.text(x + 22, y + 36, String(i + 1), { size: 15, weight: 700, fill: c.p, maxW: 60, maxLines: 1 })}
             {D.text(x + 22, y + 62, it.label, { size: 13, weight: 700, fill: c.deep, maxW: gw - 44, maxLines: 2 })}
             {it.detail ? D.text(x + 22, y + 96, it.detail, { size: 10.5, fill: GREY, maxW: gw - 44, maxLines: 2 }) : null}
@@ -260,7 +263,8 @@
         els.push(
           <g key={'p' + side}>
             {D.box(x, t.y0, pw, ph, { fill: c.p, stroke: c.p, rx: 4, fillOpacity: 0.12 })}
-            {D.ctext(x + pw / 2, t.y0 + 52, head.label, { size: 17, weight: 700, fill: c.p, maxW: pw - 60, maxLines: 2 })}
+            {I.draw(x + pw / 2, t.y0 + 26, 24, I.nameFor(head), c.p, 2)}
+            {D.ctext(x + pw / 2, t.y0 + 58, head.label, { size: 17, weight: 700, fill: c.p, maxW: pw - 60, maxLines: 2 })}
             {head.detail ? D.ctext(x + pw / 2, t.y0 + 88, head.detail, { size: 11.5, fill: c.deep, maxW: pw - 70, maxLines: 2 }) : null}
           </g>
         );

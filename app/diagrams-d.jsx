@@ -174,6 +174,7 @@
       const cx = 200, cy = t.y0 + Rmax + 14;
       const arc = window.GlyphDraw.arcPath;
       const els = [t.el];
+      const I = window.GlyphIcons;
       IT.forEach((it, i) => {
         const c = A(i);
         const R = Rmax - i * step - band / 2; // first item = outer ring
@@ -181,7 +182,13 @@
         els.push(<g key={'trk' + i}>{D.path(arc(cx, cy, R, START, START + SPAN), { fill: 'none', stroke: '#efece7', sw: band })}</g>);
         els.push(<g key={'seg' + i}>{D.path(arc(cx, cy, R, START, START + sweep), { fill: 'none', stroke: c.p, sw: band })}</g>);
       });
-      els.push(...legend(D, A, IT, 424, t.y0 + 26, 270));
+      const legX = 424;
+      els.push(...legend(D, A, IT, legX + 26, t.y0 + 26, 244));
+      if (I) IT.forEach((it, i) => {
+        const c = A(i);
+        const ly = t.y0 + 26 + i * 34;
+        els.push(<g key={'ico' + i}>{I.draw(legX + 9, ly, 19, I.nameFor(it), c.p, 2)}</g>);
+      });
       const bot = variant === 'semi' ? cy + 26 : cy + Rmax + 18;
       return { h: Math.max(bot, t.y0 + 26 + n * 34 + 10), el: els };
     },
@@ -241,22 +248,25 @@
         els.push(<g key={'ringbg' + i}>{D.circle(cx, cy, R, { fill: '#fff', stroke: 'none' })}</g>);
         els.push(<g key={'ring' + i}>{D.circle(cx, cy, R, { fill: c.p, stroke: '#fff', fillOpacity: op, sw: 2 })}</g>);
       });
+      const I = window.GlyphIcons;
       IT.forEach((it, i) => {
         const c = A(i);
         const R = Rat(i);
         const Rin = i === n - 1 ? 0 : Rat(i + 1);
         const ringMidY = cy - (R + Rin) / 2;
         const lx = 430, ly = t.y0 + 26 + i * 36;
+        const tx = lx + 26; // nudge text right to clear the icon
         els.push(
           <g key={'lead' + i}>
             {D.path(`M${cx} ${ringMidY} C${cx + 90} ${ringMidY} ${lx - 70} ${ly} ${lx - 14} ${ly}`, { fill: 'none', stroke: c.p, sw: 1.3 })}
             {D.circle(cx, ringMidY, 3.6, { fill: c.p, stroke: '#fff', sw: 1.4 })}
           </g>
         );
+        if (I) els.push(<g key={'ico' + i}>{I.draw(lx + 9, ly, 19, I.nameFor(it), c.p, 2)}</g>);
         els.push(
           <g key={'it' + i}>
-            {D.ctext(lx, ly - (it.detail ? 8 : 0), it.label + (it.value ? '  ·  ' + it.value : ''), { size: 12, weight: 600, fill: c.deep, anchor: 'start', maxW: 270, maxLines: 1 })}
-            {it.detail ? D.ctext(lx, ly + 11, it.detail, { size: 9.5, fill: GREY, anchor: 'start', maxW: 270, maxLines: 1 }) : null}
+            {D.ctext(tx, ly - (it.detail ? 8 : 0), it.label + (it.value ? '  ·  ' + it.value : ''), { size: 12, weight: 600, fill: c.deep, anchor: 'start', maxW: 244, maxLines: 1 })}
+            {it.detail ? D.ctext(tx, ly + 11, it.detail, { size: 9.5, fill: GREY, anchor: 'start', maxW: 244, maxLines: 1 }) : null}
           </g>
         );
       });

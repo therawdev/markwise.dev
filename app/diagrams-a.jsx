@@ -1,6 +1,7 @@
 // Glyph — diagram renderers, part A: flow, list, timeline, stats, funnel, pyramid
 (function () {
   const { GREY, palAt } = window.GlyphDraw;
+  const I = window.GlyphIcons;
   window.DIAGRAMS = window.DIAGRAMS || {};
   const D9 = window.DIAGRAMS;
   const W = 720;
@@ -36,8 +37,9 @@
         els.push(
           <g key={'it' + i}>
             {D.box(x, y, bw, boxH, { fill: solid ? c.p : c.soft, stroke: c.p, rx: 10 })}
-            {D.ctext(x + bw / 2, y + boxH / 2 - (it.detail ? 9 : 0), it.label, { size: 14.5, weight: 600, fill: solid ? '#fff' : c.deep, maxW: bw - 18, maxLines: 2 })}
-            {it.detail ? D.ctext(x + bw / 2, y + boxH / 2 + 22, it.detail, { size: 11, fill: solid ? 'rgba(255,255,255,0.78)' : GREY, maxW: bw - 18, maxLines: 1 }) : null}
+            {I.draw(x + 20, y + 20, 20, I.nameFor(it), solid ? '#fff' : c.deep, 2)}
+            {D.ctext(x + bw / 2, y + boxH / 2 - (it.detail ? 9 : 0) + 8, it.label, { size: 14.5, weight: 600, fill: solid ? '#fff' : c.deep, maxW: bw - 18, maxLines: 2 })}
+            {it.detail ? D.ctext(x + bw / 2, y + boxH / 2 + 22 + 8, it.detail, { size: 11, fill: solid ? 'rgba(255,255,255,0.78)' : GREY, maxW: bw - 18, maxLines: 1 }) : null}
           </g>
         );
       });
@@ -185,6 +187,7 @@
         els.push(
           <g key={'it' + i}>
             {D.poly([[cx - w1 / 2, y], [cx + w1 / 2, y], [cx + w2 / 2, y + sh], [cx - w2 / 2, y + sh]], { fill: c.p, fillOpacity: op, stroke: c.p })}
+            {I.draw(cx - topW / 2 - 22, y + sh / 2, 22, I.nameFor(it), c.p, 2)}
             {D.ctext(cx, y + sh / 2, it.label, { size: 13.5, weight: 600, fill: dark ? '#fff' : c.deep, maxW: Math.min(w1, w2) - 10, maxLines: 2 })}
             {D.line(cx + w1 / 2 + 10, y + sh / 2, cx + topW / 2 + 26, y + sh / 2, { stroke: c.mid, sw: 1.2 })}
             {it.value ? D.ctext(cx + topW / 2 + 38, y + sh / 2 - (it.detail ? 10 : 0), it.value, { size: 14, weight: 700, fill: c.p, anchor: 'start', maxW: 130, maxLines: 1 }) : null}

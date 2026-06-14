@@ -1,6 +1,7 @@
 // Glyph — diagram renderers, part L: lollipop, bullet, pictobar, overlap, bowtie, ripple, rocket, hourglass
 (function () {
   const { GREY, palAt, seriesOf } = window.GlyphDraw;
+  const I = window.GlyphIcons;
   window.DIAGRAMS = window.DIAGRAMS || {};
   const D9 = window.DIAGRAMS;
   const W = 720;
@@ -158,8 +159,9 @@
               ? D.line(244, cyR, 304, cy, { stroke: GREY, sw: 1.4 })
               : D.line(416, cy, 476, cyR, { stroke: GREY, sw: 1.4 })}
             {D.box(bx, cyR - 26, 218, 52, { fill: c.soft, stroke: c.p, rx: 10 })}
-            {D.ctext(bx + 109, cyR - (it.detail ? 9 : 0), it.label, { size: 12, weight: 700, fill: c.deep, maxW: 192, maxLines: 1 })}
-            {it.detail ? D.ctext(bx + 109, cyR + 12, it.detail, { size: 9.5, fill: GREY, maxW: 192, maxLines: 1 }) : null}
+            {I ? I.draw(bx + 26, cyR, 20, I.nameFor(it), c.p, 2) : null}
+            {D.ctext(bx + 124, cyR - (it.detail ? 9 : 0), it.label, { size: 12, weight: 700, fill: c.deep, maxW: 162, maxLines: 1 })}
+            {it.detail ? D.ctext(bx + 124, cyR + 12, it.detail, { size: 9.5, fill: GREY, maxW: 162, maxLines: 1 }) : null}
           </g>
         );
       });

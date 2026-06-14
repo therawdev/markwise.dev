@@ -1,6 +1,7 @@
 // Glyph — diagram renderers, part F: diverge, converge, waterfall, heatgrid, checklist, proscons, agenda, dial, segments, ribbon + catalog
 (function () {
   const { GREY, polar, palAt, seriesOf, ringSeg } = window.GlyphDraw;
+  const I = window.GlyphIcons;
   window.DIAGRAMS = window.DIAGRAMS || {};
   const D9 = window.DIAGRAMS;
   const W = 720;
@@ -180,8 +181,9 @@
           <g key={'it' + i}>
             {D.box(32, y - 13, 26, 26, { fill: c.soft, stroke: c.p, rx: 8 })}
             {D.path(`M${38.5} ${y}L${44} ${y + 5.5}L${52.5} ${y - 6}`, { fill: 'none', stroke: c.p, sw: 2.6 })}
-            {D.ctext(76, y - (it.detail ? 9 : 0), it.label, { size: 14, weight: 600, fill: c.deep, anchor: 'start', maxW: 480, maxLines: 1 })}
-            {it.detail ? D.ctext(76, y + 13, it.detail, { size: 11, fill: GREY, anchor: 'start', maxW: 520, maxLines: 1 }) : null}
+            {I.draw(82, y, 20, I.nameFor(it), c.p, 2)}
+            {D.ctext(102, y - (it.detail ? 9 : 0), it.label, { size: 14, weight: 600, fill: c.deep, anchor: 'start', maxW: 454, maxLines: 1 })}
+            {it.detail ? D.ctext(102, y + 13, it.detail, { size: 11, fill: GREY, anchor: 'start', maxW: 494, maxLines: 1 }) : null}
             {it.value ? D.ctext(W - 32, y, it.value, { size: 12.5, weight: 700, fill: c.p, anchor: 'end', maxW: 100, maxLines: 1 }) : null}
           </g>
         );
@@ -219,8 +221,9 @@
             <g key={'it' + gi}>
               {D.circle(x + 26, y, 9, { fill: ic.soft, stroke: ic.p, sw: 1.4 })}
               {D.ctext(x + 26, y, glyph, { size: 12, weight: 700, fill: ic.p })}
-              {D.ctext(x + 44, y - (it.detail ? 8 : 0), it.label, { size: 12, weight: 600, fill: ic.deep, anchor: 'start', maxW: colW - 64, maxLines: 1 })}
-              {it.detail ? D.ctext(x + 44, y + 12, it.detail, { size: 10, fill: GREY, anchor: 'start', maxW: colW - 64, maxLines: 1 }) : null}
+              {I.draw(x + 54, y, 18, I.nameFor(it), ic.p, 1.9)}
+              {D.ctext(x + 70, y - (it.detail ? 8 : 0), it.label, { size: 12, weight: 600, fill: ic.deep, anchor: 'start', maxW: colW - 90, maxLines: 1 })}
+              {it.detail ? D.ctext(x + 70, y + 12, it.detail, { size: 10, fill: GREY, anchor: 'start', maxW: colW - 90, maxLines: 1 }) : null}
             </g>
           );
         });
@@ -246,8 +249,9 @@
           <g key={'it' + i}>
             {D.ctext(railX - 24, y, it.value || String(i + 1).padStart(2, '0'), { size: 13, weight: 700, fill: c.p, anchor: 'end', maxW: 110, maxLines: 1 })}
             {D.circle(railX, y, 7, { fill: '#fff', stroke: c.p, sw: 2.4 })}
-            {D.ctext(railX + 28, y - (it.detail ? 9 : 0), it.label, { size: 14, weight: 600, fill: c.deep, anchor: 'start', maxW: 470, maxLines: 1 })}
-            {it.detail ? D.ctext(railX + 28, y + 13, it.detail, { size: 11, fill: GREY, anchor: 'start', maxW: 500, maxLines: 1 }) : null}
+            {I.draw(railX + 34, y, 20, I.nameFor(it), c.p, 2)}
+            {D.ctext(railX + 54, y - (it.detail ? 9 : 0), it.label, { size: 14, weight: 600, fill: c.deep, anchor: 'start', maxW: 444, maxLines: 1 })}
+            {it.detail ? D.ctext(railX + 54, y + 13, it.detail, { size: 11, fill: GREY, anchor: 'start', maxW: 474, maxLines: 1 }) : null}
           </g>
         );
       });
