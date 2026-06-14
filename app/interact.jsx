@@ -43,6 +43,7 @@
     const [liveSc, setLiveSc] = useState(null);   // live scale factor while corner-dragging
     const [mq, setMq] = useState(null);           // marquee rect {x0,y0,x1,y1}
     const [inline, setInline] = useState(null);   // { d, field, box, fontPx } — in-place text editing
+    const [vbCrop, setVbCrop] = useState(null);    // tightened vertical viewBox {y,h} trimming dead space
     const layout = visual.layout || {};
     const sel = sels.length === 1 ? sels[0] : null;
     const isSel = (d) => sels.some((x) => dkey(x) === dkey(d));
@@ -87,6 +88,27 @@
     }
 
     useEffect(() => { setSels([]); setPop(null); setInline(null); }, [visual.id]);
+
+    // Trim dead vertical space: most diagrams use backdrop 'none' (no full-size rect), so the SVG's
+    // content bounds are the real extent. Crop the viewBox to content + a small margin so the figure
+    // isn't taller than the drawing. (Diagrams WITH a decorative backdrop keep their full frame.)
+    const outH = Math.ceil(out.h);
+    useEffect(() => {
+      const svg = svgRef.current;
+      if (!svg || (visual.backdrop && visual.backdrop !== 'none')) { setVbCrop(null); return; }
+      const id = requestAnimationFrame(() => {
+        try {
+          const bb = svg.getBBox(); // content bounds in user space, independent of viewBox
+          const M = 12;
+          const top = Math.max(0, Math.floor(bb.y - M));
+          const bot = Math.min(outH, Math.ceil(bb.y + bb.height + M));
+          const nh = bot - top;
+          if (nh > 40 && (top > 4 || outH - bot > 4)) setVbCrop((p) => (p && p.y === top && p.h === nh ? p : { y: top, h: nh }));
+          else setVbCrop(null);
+        } catch (e) { /* getBBox can throw if detached */ }
+      });
+      return () => cancelAnimationFrame(id);
+    }, [visual, outH, editable]);
 
     // edit a text in place: an input overlays the text's exact spot in the diagram
     const beginInline = (d) => {
@@ -705,11 +727,13 @@
     const floatLeft = u ? Math.min(Math.max(u.x + u.w / 2, 92), (u.wrapW || 720) - 92) : 0;
 
     const hsc = visual.hscale || 1;
+    const vbY = vbCrop ? vbCrop.y : 0;
+    const vbH = vbCrop ? vbCrop.h : Math.ceil(out.h);
     return (
-      <div className="dg-wrap" style={{ position: 'relative', aspectRatio: hsc !== 1 ? '720 / ' + (Math.ceil(out.h) * hsc).toFixed(1) : undefined }}>
+      <div className="dg-wrap" style={{ position: 'relative', aspectRatio: hsc !== 1 ? '720 / ' + (vbH * hsc).toFixed(1) : undefined }}>
         <svg
           ref={svgRef}
-          viewBox={`0 0 720 ${Math.ceil(out.h)}`}
+          viewBox={`0 ${vbY} 720 ${vbH}`}
           preserveAspectRatio={hsc !== 1 ? 'none' : undefined}
           className={className}
           style={{ width: '100%', height: hsc !== 1 ? '100%' : undefined, display: 'block', touchAction: editable ? 'none' : undefined }}

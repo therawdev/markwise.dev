@@ -14,8 +14,9 @@
     return (d.textContent || '').trim();
   }
 
-  function svgToPng(svg, scale) {
+  function svgToPng(svg, scale, opts) {
     scale = scale || 2;
+    const transparent = !!(opts && opts.transparent);
     return new Promise((res, rej) => {
       const vb = svg.viewBox.baseVal;
       const img = new Image();
@@ -24,8 +25,7 @@
         c.width = vb.width * scale;
         c.height = vb.height * scale;
         const x = c.getContext('2d');
-        x.fillStyle = '#ffffff';
-        x.fillRect(0, 0, c.width, c.height);
+        if (!transparent) { x.fillStyle = '#ffffff'; x.fillRect(0, 0, c.width, c.height); } // default: white (e.g. Word)
         x.drawImage(img, 0, 0, c.width, c.height);
         res({ url: c.toDataURL('image/png'), w: vb.width, h: vb.height });
       };

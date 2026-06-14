@@ -274,7 +274,7 @@
     return pptxLoading;
   }
 
-  async function exportPptx(slides, theme, docTitle, railEl) {
+  async function exportPptx(slides, theme, docTitle, railEl, transparent) {
     await loadPptx();
     const v = themeVars(theme);
     const P = new window.PptxGenJS();
@@ -317,7 +317,7 @@
         if (hasVis && railEl) {
           const svg = railEl.querySelector(`[data-slide-idx="${sl._si}"] svg`);
           if (svg) {
-            const png = await window.GlyphDocExport.svgToPng(svg, 2);
+            const png = await window.GlyphDocExport.svgToPng(svg, 2, { transparent });
             const aspect = png.h / png.w;
             const visOnly = !showText || !paras.length;
             let iw = visOnly ? 7.2 : 5.1;
@@ -391,6 +391,7 @@
     });
     const [present, setPresent] = useState(false);
     const [aiOn, setAiOn] = useState(() => (snap0 ? snap0.aiOn !== false : localStorage.getItem('glyph-deck-ai') !== '0'));
+    const [pptxAlpha, setPptxAlpha] = useState(() => localStorage.getItem('glyph-deck-pptxbg') !== 'white'); // transparent diagram PNGs by default
     const [aiBusy, setAiBusy] = useState(false);
     const [distilled, setDistilled] = useState(() => (snap0 && snap0.distilled) || {});
     // build flow: generating → per-slide review (editable, remarks, regenerate) → deck.
@@ -472,6 +473,7 @@
     }, [baseSlides.length]);
     useEffect(() => { localStorage.setItem('glyph-deck-theme', themeId); }, [themeId]);
     useEffect(() => { localStorage.setItem('glyph-deck-ai', aiOn ? '1' : '0'); }, [aiOn]);
+    useEffect(() => { localStorage.setItem('glyph-deck-pptxbg', pptxAlpha ? 'transparent' : 'white'); }, [pptxAlpha]);
     // remember that this deck was built so future opens can skip the generate/review flow
     useEffect(() => { if (phase === 'deck') builtRef.current = true; }, [phase]);
 
@@ -727,7 +729,7 @@
     const doExport = async () => {
       setBusy(true);
       try {
-        await exportPptx(live, theme, docTitle, railRef.current);
+        await exportPptx(live, theme, docTitle, railRef.current, pptxAlpha);
         toast('PPTX downloading…');
       } catch (e) {
         console.warn(e);
@@ -778,6 +780,7 @@
                 <button className="ghost-btn sm" onClick={() => { setPickOpen(false); setLayoutOpen(!layoutOpen); }}>▦ Layouts</button>
                 <button className="ghost-btn sm" onClick={() => { setLayoutOpen(false); setPickOpen(!pickOpen); }}>🎨 Theme</button>
                 <button className="ghost-btn sm" onClick={doPrint}>⎙ PDF</button>
+                <button className="ghost-btn sm" title="Diagram image background in the PPTX export" onClick={() => setPptxAlpha(!pptxAlpha)}>PNG bg: {pptxAlpha ? 'transparent' : 'white'}</button>
                 <button className="ghost-btn sm" onClick={doExport} disabled={busy}>{busy ? 'Exporting…' : '↓ PPTX'}</button>
                 <button className="primary-btn" onClick={() => setPresent(true)}>▶ Present</button>
               </React.Fragment>
