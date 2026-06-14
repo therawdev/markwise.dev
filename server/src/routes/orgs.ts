@@ -5,6 +5,10 @@ import { db, audit } from '../db.js';
 import { requireAuth, hasPermission } from '../middleware.js';
 import { DEFAULT_ROLES, PERMISSIONS, isValidPermissionList } from '../permissions.js';
 import { aiUsageSummary } from '../usage.js';
+import { aiQuotaStatus } from '../quota.js';
+import { listProviderConfigs, setProviderConfig } from '../providers/config.js';
+import { secretsConfigured } from '../secrets.js';
+import { PROVIDERS } from '../providers/index.js';
 
 export const orgsRouter = Router();
 
@@ -47,6 +51,62 @@ orgsRouter.get('/:id/ai-usage', async (req, res) => {
     return res.status(403).json({ error: 'No access' });
   }
   res.json(await aiUsageSummary({ companyId, days: req.query.days ? Number(req.query.days) : undefined }));
+});
+
+// ---- per-company AI provider config (bring-your-own-key) ----
+// A company can store its own provider key/model (encrypted); its members' AI
+// calls use it, falling back to the platform default when unset. Gated by
+// org:settings since a BYO key is a company-level setting.
+async function canManageProviders(req: import('express').Request, companyId: number): Promise<boolean> {
+  return req.user!.is_app_owner || (await hasPermission(req.user!, companyId, 'org:settings'));
+}
+
+orgsRouter.get('/:id/providers', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await canManageProviders(req, companyId))) {
+    return res.status(403).json({ error: 'You need the company settings permission' });
+  }
+  res.json({ secretsConfigured: secretsConfigured(), providers: await listProviderConfigs(companyId) });
+});
+
+orgsRouter.put('/:id/providers/:provider', async (req, res) => {
+  const companyId = Number(req.params.id);
+  const provider = String(req.params.provider);
+  if (!PROVIDERS[provider]) return res.status(400).json({ error: 'Unknown provider' });
+  if (!(await canManageProviders(req, companyId))) {
+    return res.status(403).json({ error: 'You need the company settings permission' });
+  }
+  const { model, apiKey } = req.body || {};
+  if (apiKey && !secretsConfigured()) {
+    return res.status(400).json({ error: 'Key storage is not configured on the server — contact the platform admin' });
+  }
+  await setProviderConfig(provider, companyId, {
+    model: model === undefined ? undefined : model ? String(model) : null,
+    apiKey: apiKey === undefined ? undefined : apiKey ? String(apiKey) : null,
+  });
+  await audit(req.user!.id, 'company.provider_config', `company:${companyId}`, {
+    provider, model: model || null, keyChanged: apiKey !== undefined,
+  });
+  res.json({ ok: true, providers: await listProviderConfigs(companyId) });
+});
+
+// Live test using the company's resolved config (its key if set, else platform default).
+orgsRouter.post('/:id/providers/:provider/test', async (req, res) => {
+  const companyId = Number(req.params.id);
+  const provider = String(req.params.provider);
+  const p = PROVIDERS[provider];
+  if (!p) return res.status(400).json({ error: 'Unknown provider' });
+  if (!(await canManageProviders(req, companyId))) {
+    return res.status(403).json({ error: 'You need the company settings permission' });
+  }
+  const gate = await p.available(companyId);
+  if (!gate.ok) return res.json({ ok: false, reason: gate.reason });
+  try {
+    const out = await p.complete('Reply with only the word: ok', companyId);
+    res.json({ ok: true, sample: String(out.text).trim().slice(0, 100) });
+  } catch (e) {
+    res.json({ ok: false, reason: e instanceof Error ? e.message : 'request failed' });
+  }
 });
 
 // ---- create a company; creator becomes Owner with system roles seeded ----
@@ -359,16 +419,12 @@ orgsRouter.get('/:id/usage', async (req, res) => {
     .whereNull('deleted_at')
     .count('id as count')
     .first();
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const aiCount = await db('ai_usage')
-    .where({ company_id: companyId })
-    .where('created_at', '>=', monthStart)
-    .count('id as count')
-    .first();
+  // Successful completions this month, matching the quota the server enforces.
+  const quota = await aiQuotaStatus({ companyId });
   res.json({
     docs: Number((docsCount as any)?.count ?? 0),
-    ai_month: Number((aiCount as any)?.count ?? 0),
+    ai_month: quota.used,
+    ai_limit: quota.limit, // 0 = unlimited
   });
 });
 

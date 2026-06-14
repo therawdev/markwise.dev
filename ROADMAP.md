@@ -48,6 +48,14 @@ cost/quality. Directly covers your asks: keys-in-DB, detailed usage, request/res
 
 **Deliverables:** migrations (`provider_configs`, `ai_requests`, quota fields) · secrets-encryption util · capture/metering middleware in `routes/ai.ts` · admin: Providers, AI Logs, Usage, Quotas pages · user/org usage views.
 
+> **Status: P1 complete.** Provider keys-in-DB, AI request log, and usage
+> dashboards shipped earlier. Now also done: **per-org BYO keys** are wired end
+> to end (`companyId` threads through every provider so a company's members'
+> calls use its key; managed from the org **AI keys** tab), and **monthly
+> quotas** (`quota.ts`) hard-block `/api/ai/complete` past an admin-configurable
+> per-plan / per-user limit (admin **Quotas** tab; the org billing meter reflects
+> the live limit). App owners are exempt; the per-minute burst limiter still applies.
+
 ---
 
 ## Phase P2 — Enterprise Identity *(SSO, provisioning, account security)*

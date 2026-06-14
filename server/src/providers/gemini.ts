@@ -10,15 +10,15 @@ export const geminiProvider: AIProvider = {
   id: 'gemini',
   label: 'Google Gemini',
 
-  async available() {
-    const rt = await resolveRuntime('gemini');
+  async available(companyId: number | null = null) {
+    const rt = await resolveRuntime('gemini', companyId);
     if (!rt.enabled) return { ok: false, reason: 'Gemini is disabled' };
     if (!rt.apiKey) return { ok: false, reason: 'No Gemini API key — set it in the admin panel' };
     return { ok: true };
   },
 
-  async complete(prompt: string): Promise<CompletionResult> {
-    const rt = await resolveRuntime('gemini');
+  async complete(prompt: string, companyId: number | null = null): Promise<CompletionResult> {
+    const rt = await resolveRuntime('gemini', companyId);
     if (!rt.apiKey) throw new Error('No Gemini API key configured');
     const model = rt.model || DEFAULT_MODEL;
     const r = await fetch(`${BASE}/models/${model}:generateContent`, {

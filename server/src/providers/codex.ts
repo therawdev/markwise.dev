@@ -22,15 +22,15 @@ export const codexProvider: AIProvider = {
   id: 'codex',
   label: 'OpenAI Codex SDK',
 
-  async available() {
-    const rt = await resolveRuntime('codex');
+  async available(companyId: number | null = null) {
+    const rt = await resolveRuntime('codex', companyId);
     if (!rt.enabled) return { ok: false, reason: 'Codex is disabled' };
     if (rt.apiKey) return { ok: true };
     return { ok: true, reason: 'No OpenAI key set — relying on host `codex login` credentials' };
   },
 
-  async complete(prompt: string): Promise<CompletionResult> {
-    const rt = await resolveRuntime('codex');
+  async complete(prompt: string, companyId: number | null = null): Promise<CompletionResult> {
+    const rt = await resolveRuntime('codex', companyId);
     // A fresh thread per request: completions are stateless one-shots.
     const thread = client(rt.apiKey).startThread({
       sandboxMode: 'read-only',
