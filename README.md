@@ -24,6 +24,8 @@ application-owner admin panel, and a pluggable AI provider layer.
 | ![Admin](assets/screenshots/admin.png) | ![Diagram](assets/screenshots/diagram.png) |
 | **AI provider keys & models** — stored encrypted, set from the UI | **AI request log** — every prompt & response, for review |
 | ![Provider keys & models](assets/screenshots/admin-providers.png) | ![AI request log](assets/screenshots/admin-ai-logs.png) |
+| **AI usage** — requests, tokens & est. cost (individual / company / app-admin) | |
+| ![AI usage](assets/screenshots/admin-ai-usage.png) | |
 
 ## Quick start
 
@@ -73,10 +75,12 @@ admin) and `CODEX_AUTH_JSON` (Codex CLI auth — rotate anytime by re-running
   full-screen present mode, PPTX/PDF export
 - **Companies & RBAC** — default Owner/User roles plus custom roles with
   per-permission checkboxes; single-use invite links
-- **Admin panel** — users, companies, AI usage, audit log, the active-provider
-  switch, plus **per-provider API keys & models stored AES-256-GCM encrypted in
-  the DB and managed from the UI**, and a full **AI request log** (every prompt,
-  response, provider, model, status & latency) for review and prompt improvement
+- **Admin panel** — users, companies, audit log, the active-provider switch, plus
+  **per-provider API keys & models stored AES-256-GCM encrypted in the DB and
+  managed from the UI**, a full **AI request log** (every prompt, response,
+  provider, model, status & latency) for review, and **detailed AI usage**
+  dashboards (requests, tokens & est. cost by provider/model) at three scopes —
+  individual, company, and platform-wide
 - **AI providers** — Google Gemini via REST (default), OpenAI Codex SDK, Claude
   Code headless CLI, and Claude SDK/API (gated by a policy toggle). Keys & models
   are set in the admin panel (encrypted at rest) with env vars as fallback; the
