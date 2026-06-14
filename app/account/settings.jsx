@@ -42,7 +42,7 @@
     const [apiKeys, setApiKeys] = useState([]);
     const [keysLoaded, setKeysLoaded] = useState(false);
     const [newlyCreatedToken, setNewlyCreatedToken] = useState(null); // {id, fullToken}
-    const [usage, setUsage] = useState(null); // this user's AI usage
+    const [usage, setUsage] = useState(null); // this user's AI credit standing
     const [usageErr, setUsageErr] = useState('');
 
     // load api keys count for nav badge on mount
@@ -53,10 +53,10 @@
       }).catch(() => { setKeysLoaded(true); });
     }, []);
 
-    // lazy-load the user's own AI usage when that pane opens
+    // lazy-load the user's own AI credit standing when that pane opens
     const loadUsage = () => {
       setUsageErr('');
-      return window.MarkwiseAPI.get('/api/ai/usage').then(setUsage).catch((e) => { setUsageErr(e.message || 'Failed to load AI usage.'); toast(e.message); });
+      return window.MarkwiseAPI.get('/api/ai/quota').then(setUsage).catch((e) => { setUsageErr(e.message || 'Failed to load AI usage.'); toast(e.message); });
     };
     useEffect(() => {
       if (pane === 'usage' && !usage) loadUsage();
@@ -302,8 +302,12 @@
               ) : null}
 
               {pane === 'usage' ? (
-                <MWSection title="AI usage" sub="Your AI requests, tokens & estimated cost.">
-                  <MWUsage usage={usage} error={usageErr} onRetry={loadUsage} />
+                <MWSection title="AI credits" sub="Each AI visual you generate uses one credit. Your allowance resets on the 1st.">
+                  {usageErr ? (
+                    <div className="card usage-card"><div className="dim sm-note">{usageErr} · <button className="ghost-btn sm" onClick={loadUsage}>Retry</button></div></div>
+                  ) : (
+                    <MWCreditBar status={usage} label="AI credits this month" />
+                  )}
                 </MWSection>
               ) : null}
 

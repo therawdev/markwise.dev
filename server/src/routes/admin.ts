@@ -6,7 +6,7 @@ import { PROVIDERS, providerStatus } from '../providers/index.js';
 import { listProviderConfigs, setProviderConfig } from '../providers/config.js';
 import { secretsConfigured } from '../secrets.js';
 import { aiUsageSummary } from '../usage.js';
-import { getQuotas, DEFAULT_QUOTAS, type QuotaConfig } from '../quota.js';
+import { getQuotas, DEFAULT_QUOTAS, type QuotaConfig, orgMemberDefaultCredits, limitBehaviorFor } from '../quota.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth);
@@ -181,9 +181,13 @@ adminRouter.post('/providers/:id/test', async (req, res) => {
   }
 });
 
-// ---- AI quotas (monthly hard limits per plan / individual) ----
+// ---- AI quotas (monthly hard limits per plan / individual) + credit defaults ----
 adminRouter.get('/quotas', async (_req, res) => {
-  res.json(await getQuotas());
+  res.json({
+    ...(await getQuotas()),
+    org_member_default_credits: await orgMemberDefaultCredits(),
+    limit_behavior_default: await limitBehaviorFor(null),
+  });
 });
 
 adminRouter.put('/quotas', async (req, res) => {
@@ -198,8 +202,22 @@ adminRouter.put('/quotas', async (req, res) => {
     }
   }
   await setSetting('ai_quotas', next);
+  if (req.body?.org_member_default_credits !== undefined) {
+    const n = Math.floor(Number(req.body.org_member_default_credits));
+    if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ error: 'org_member_default_credits must be a positive number' });
+    await setSetting('org_member_default_credits', n);
+  }
+  if (req.body?.limit_behavior_default !== undefined) {
+    const b = req.body.limit_behavior_default;
+    if (b !== 'block' && b !== 'fallback') return res.status(400).json({ error: 'limit_behavior_default must be "block" or "fallback"' });
+    await setSetting('ai_limit_behavior_default', b);
+  }
   await audit(req.user!.id, 'admin.quotas', 'settings', next as unknown as Record<string, unknown>);
-  res.json(next);
+  res.json({
+    ...next,
+    org_member_default_credits: await orgMemberDefaultCredits(),
+    limit_behavior_default: await limitBehaviorFor(null),
+  });
 });
 
 // ---- AI usage (global, across the whole platform) ----

@@ -116,6 +116,13 @@
       setToastMsg(msg);
       setTimeout(() => setToastMsg(null), 2200);
     }, []);
+    // Out of AI credits: when the org/global behaviour is 'block', tell the user
+    // (a visual still appears via the offline parser). 'fallback' stays silent.
+    useEffect(() => {
+      const onQuota = (e) => { if (e.detail && e.detail.behavior === 'block') toast(e.detail.error || 'You’re out of AI credits this month.'); };
+      window.addEventListener('mw-ai-quota', onQuota);
+      return () => window.removeEventListener('mw-ai-quota', onQuota);
+    }, [toast]);
     const saveStateRef = useRef(saveState);
     saveStateRef.current = saveState;
 

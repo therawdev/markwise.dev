@@ -459,22 +459,33 @@
               ) : (
                 <div className="card pad">
                   {[
-                    ['free_monthly', 'Companies on the Free plan', 'Per company, per month'],
-                    ['pro_monthly', 'Companies on the Pro plan', 'Per company, per month'],
+                    ['free_monthly', 'Companies on the Free plan', 'Company-wide pool, per month'],
+                    ['pro_monthly', 'Companies on the Pro plan', 'Company-wide pool, per month'],
                     ['user_monthly', 'Individual users', 'Personal (non-company) usage, per month'],
+                    ['org_member_default_credits', 'Default credits per org member', 'Each company member’s monthly cap unless an owner overrides it'],
                   ].map(([key, label, hint]) => (
                     <div className="set-row" key={key}>
                       <div>
                         <b>{label}</b>
-                        <p>{hint}{Number(quotaDraft[key]) <= 0 ? ' — currently unlimited' : ''}</p>
+                        <p>{hint}{Number(quotaDraft[key]) <= 0 && key !== 'org_member_default_credits' ? ' — currently unlimited' : ''}</p>
                       </div>
                       <input
-                        className="fld" type="number" min="0" style={{ width: 120 }}
+                        className="fld" type="number" min={key === 'org_member_default_credits' ? '1' : '0'} style={{ width: 120 }}
                         value={quotaDraft[key]}
                         onChange={(e) => setQuotaDraft((d) => ({ ...d, [key]: e.target.value === '' ? '' : Math.max(0, Math.floor(Number(e.target.value))) }))}
                       />
                     </div>
                   ))}
+                  <div className="set-row">
+                    <div>
+                      <b>At-limit behaviour (global default)</b>
+                      <p>What happens when a limit is hit, unless a company overrides it. Block refuses and tells the user; Fallback silently uses the offline parser.</p>
+                    </div>
+                    <div className="field-row" style={{ flex: '0 0 auto' }}>
+                      <button type="button" className={'chip' + (quotaDraft.limit_behavior_default === 'block' ? ' on' : '')} onClick={() => setQuotaDraft((d) => ({ ...d, limit_behavior_default: 'block' }))}>Block</button>
+                      <button type="button" className={'chip' + (quotaDraft.limit_behavior_default === 'fallback' ? ' on' : '')} onClick={() => setQuotaDraft((d) => ({ ...d, limit_behavior_default: 'fallback' }))}>Fallback</button>
+                    </div>
+                  </div>
                   <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
                     <button className="primary-btn" disabled={quotaBusy} onClick={saveQuotas}>{quotaBusy ? 'Saving…' : 'Save quotas'}</button>
                   </div>

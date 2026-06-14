@@ -11,6 +11,7 @@
     if (!r.ok) {
       const err = new Error(data.error || r.statusText);
       err.status = r.status;
+      err.data = data; // keep the structured body (e.g. quota code/behavior)
       throw err;
     }
     return data;
@@ -92,7 +93,17 @@
   window.claude.complete = async function (prompt) {
     const body = { prompt };
     if (window.MW_DOC && window.MW_DOC.company_id) body.company_id = window.MW_DOC.company_id;
-    const out = await req('POST', '/api/ai/complete', body);
-    return out.text;
+    try {
+      const out = await req('POST', '/api/ai/complete', body);
+      return out.text;
+    } catch (e) {
+      // Out of AI credits: tell the editor so it can notify the user (when the
+      // org/global behaviour is 'block'). Either way we re-throw so the caller's
+      // deterministic offline parser still produces a visual.
+      if (e && e.data && e.data.code === 'quota_exceeded') {
+        window.dispatchEvent(new CustomEvent('mw-ai-quota', { detail: e.data }));
+      }
+      throw e;
+    }
   };
 })();

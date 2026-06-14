@@ -581,6 +581,7 @@
   .prov-key-toggle { display: flex; align-items: center; gap: 9px; }
   .prov-key-field { margin-bottom: 10px; }
 
+  .credit-foot { margin-top: 8px; }
   .result-note { font-size: 12px; font-weight: 600; margin-top: 8px; line-height: 1.5; }
   .result-note.ok { color: #246b3d; }
   .result-note.err { color: #b3422f; }

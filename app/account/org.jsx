@@ -186,8 +186,6 @@
     const [invites, setInvites] = useState([]);
     const [inviteRoleId, setInviteRoleId] = useState(null);
     const [coName, setCoName] = useState('');
-    const [usage, setUsage] = useState(null); // this company's AI usage
-    const [usageErr, setUsageErr] = useState('');
 
     const load = () => {
       setLoading(true); setLoadErr(null);
@@ -214,8 +212,6 @@
       API.get('/api/orgs/' + companyId + '/invites').then(setInvites).catch(() => {});
     };
     useEffect(() => { if (org && tab === 'members') loadInvites(); }, [org, tab]);
-    const loadUsage = () => { setUsageErr(''); return API.get('/api/orgs/' + companyId + '/ai-usage').then(setUsage).catch((e) => { setUsageErr(e.message || 'Failed to load AI usage.'); toast(e.message); }); };
-    useEffect(() => { if (org && tab === 'usage') loadUsage(); }, [org, tab]);
 
     if (loading) {
       return (
@@ -543,11 +539,9 @@
             <MWBillingTab companyId={companyId} org={org} setPlan={setPlan} />
           ) : null}
 
-          {/* ===== AI USAGE TAB ===== */}
+          {/* ===== AI USAGE / CREDITS TAB ===== */}
           {tab === 'usage' ? (
-            <MWSection title="AI usage" sub="This company's AI requests, tokens & estimated cost.">
-              <MWUsage usage={usage} error={usageErr} onRetry={loadUsage} />
-            </MWSection>
+            <MWOrgCredits companyId={companyId} canManage={canBilling || me.is_app_owner} isAppOwner={me.is_app_owner} toast={toast} />
           ) : null}
 
           {/* ===== AI KEYS TAB (bring-your-own provider keys) ===== */}
@@ -785,5 +779,138 @@
     );
   }
 
-  Object.assign(window, { MWOrgPage, MWRoleMatrix, MWOrgProvidersTab });
+  // ===== AI CREDITS TAB — company pool + per-member allocation =====
+  // Members with org:billing (and the app owner) manage credits; everyone else
+  // sees just their own bar. 1 credit = 1 successful AI generation; resets monthly.
+  function MWOrgCredits({ companyId, canManage, isAppOwner, toast }) {
+    const API = window.MarkwiseAPI;
+    const [data, setData] = useState(null);   // billing/admin view
+    const [mine, setMine] = useState(null);   // member view
+    const [err, setErr] = useState('');
+    const [drafts, setDrafts] = useState({}); // userId -> cap string
+    const [busy, setBusy] = useState('');
+    const [adminDraft, setAdminDraft] = useState({});
+
+    const load = () => {
+      setErr('');
+      if (canManage) {
+        API.get('/api/orgs/' + companyId + '/credits')
+          .then((d) => { setData(d); setAdminDraft(d.admin ? { pool: d.admin.ai_credit_limit == null ? '' : String(d.admin.ai_credit_limit) } : {}); })
+          .catch((e) => { setErr(e.message); toast(e.message); });
+      } else {
+        API.get('/api/orgs/' + companyId + '/my-credits').then(setMine).catch((e) => { setErr(e.message); toast(e.message); });
+      }
+    };
+    useEffect(() => { load(); }, [companyId]);
+
+    const saveMember = async (uid) => {
+      const raw = drafts[uid];
+      const limit = raw === '' || raw == null ? null : Math.max(0, Math.floor(Number(raw)));
+      setBusy('m' + uid);
+      try { await API.put('/api/orgs/' + companyId + '/members/' + uid + '/credits', { limit }); toast('Credits updated'); setDrafts((d) => { const n = { ...d }; delete n[uid]; return n; }); load(); }
+      catch (e) { toast(e.message); } finally { setBusy(''); }
+    };
+    const saveBehavior = async (behavior) => {
+      setBusy('beh');
+      try { await API.put('/api/orgs/' + companyId + '/limit-behavior', { behavior }); toast('Saved'); load(); }
+      catch (e) { toast(e.message); } finally { setBusy(''); }
+    };
+    const saveAdmin = async (patch) => {
+      setBusy('admin');
+      try { await API.put('/api/orgs/' + companyId + '/admin-credits', patch); toast('Saved'); load(); }
+      catch (e) { toast(e.message); } finally { setBusy(''); }
+    };
+
+    // ---- member-only view ----
+    if (!canManage) {
+      return (
+        <MWSection title="AI credits" sub="Each AI visual you generate uses one credit. Resets on the 1st.">
+          {err ? <div className="card usage-card"><div className="dim sm-note">{err}</div></div> : <MWCreditBar status={mine} label="Your AI credits this month" />}
+        </MWSection>
+      );
+    }
+
+    if (!data) return <MWSection title="AI credits"><div className="card empty-note">{err || 'Loading…'}</div></MWSection>;
+
+    return (
+      <React.Fragment>
+        <MWSection title="AI credits" sub="The company's monthly pool. 1 credit = 1 AI visual; resets on the 1st.">
+          <MWCreditBar status={data.pool} label="Company credits this month" />
+        </MWSection>
+
+        <MWSection title="Member allocations" sub={'Each member gets ' + data.default_member_credits + ' credits/month by default. Set a custom cap, or 0 for unlimited.'}>
+          <div className="card">
+            <table className="tbl">
+              <thead><tr><th>Member</th><th>Role</th><th className="num">Used</th><th>Monthly credits</th><th className="num">Left</th></tr></thead>
+              <tbody>
+                {data.members.map((m) => {
+                  const draft = drafts[m.user_id];
+                  const shown = draft !== undefined ? draft : (m.custom ? String(m.unlimited ? 0 : m.limit) : '');
+                  return (
+                    <tr key={m.user_id}>
+                      <td><span className="member-cell"><MWAvatar name={m.name} size={24} /><b>{m.name}</b></span></td>
+                      <td className="dim">{m.role}</td>
+                      <td className="num">{m.used}</td>
+                      <td>
+                        <div className="field-row" style={{ maxWidth: 230 }}>
+                          <input className="fld" type="number" min="0" placeholder={'default (' + data.default_member_credits + ')'}
+                            value={shown} onChange={(e) => setDrafts((d) => ({ ...d, [m.user_id]: e.target.value }))} />
+                          <button className="secondary-btn" disabled={busy === 'm' + m.user_id} onClick={() => saveMember(m.user_id)}>Save</button>
+                        </div>
+                      </td>
+                      <td className="num">{m.unlimited ? <MWPill tone="grey">Unlimited</MWPill> : <span className="dim">{m.remaining}</span>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="card-foot dim sm-note">Blank = the org default ({data.default_member_credits}). Enter a number for a custom cap, or 0 for unlimited. Members are still bounded by the company pool above.</div>
+          </div>
+        </MWSection>
+
+        {data.behavior.can_org_set ? (
+          <MWSection title="When a member runs out" sub="What happens once someone hits their credit limit.">
+            <div className="card pad">
+              <div className="field-row" style={{ flexWrap: 'wrap' }}>
+                <button className={'chip' + (data.behavior.effective === 'block' ? ' on' : '')} disabled={busy === 'beh'} onClick={() => saveBehavior('block')}>Block &amp; tell them</button>
+                <button className={'chip' + (data.behavior.effective === 'fallback' ? ' on' : '')} disabled={busy === 'beh'} onClick={() => saveBehavior('fallback')}>Silent offline fallback</button>
+              </div>
+            </div>
+          </MWSection>
+        ) : null}
+
+        {isAppOwner && data.admin ? (
+          <MWSection title="App-owner controls" sub="Top up the company pool, set the at-limit behaviour, and delegate that choice to the org owner. Visible to app owners only.">
+            <div className="card pad">
+              <label className="fld-label">Company credit pool ({data.admin.plan} plan)</label>
+              <div className="field-row" style={{ maxWidth: 320 }}>
+                <input className="fld" type="number" min="0" placeholder="blank = plan default"
+                  value={adminDraft.pool != null ? adminDraft.pool : ''}
+                  onChange={(e) => setAdminDraft((d) => ({ ...d, pool: e.target.value }))} />
+                <button className="secondary-btn" disabled={busy === 'admin'} onClick={() => saveAdmin({ ai_credit_limit: adminDraft.pool === '' ? null : Math.max(0, Math.floor(Number(adminDraft.pool))) })}>Save pool</button>
+              </div>
+              <div className="dim sm-note" style={{ margin: '4px 0 0' }}>Blank = the plan default. 0 = unlimited. This is the org-wide ceiling across all members.</div>
+
+              <label className="fld-label">At-limit behaviour</label>
+              <div className="field-row" style={{ flexWrap: 'wrap' }}>
+                <button className={'chip' + (data.admin.ai_limit_behavior === 'block' ? ' on' : '')} disabled={busy === 'admin'} onClick={() => saveAdmin({ ai_limit_behavior: 'block' })}>Block</button>
+                <button className={'chip' + (data.admin.ai_limit_behavior === 'fallback' ? ' on' : '')} disabled={busy === 'admin'} onClick={() => saveAdmin({ ai_limit_behavior: 'fallback' })}>Fallback</button>
+                <button className={'chip' + (data.admin.ai_limit_behavior == null ? ' on' : '')} disabled={busy === 'admin'} onClick={() => saveAdmin({ ai_limit_behavior: null })}>Use global default</button>
+              </div>
+
+              <div className="set-row" style={{ marginTop: 14 }}>
+                <div>
+                  <b>Let the org owner choose the behaviour</b>
+                  <p>When on, a member with the billing permission can switch between block and fallback for this company.</p>
+                </div>
+                <MWSwitch on={!!data.admin.org_can_set_limit_behavior} disabled={busy === 'admin'} onChange={() => saveAdmin({ org_can_set_limit_behavior: !data.admin.org_can_set_limit_behavior })} />
+              </div>
+            </div>
+          </MWSection>
+        ) : null}
+      </React.Fragment>
+    );
+  }
+
+  Object.assign(window, { MWOrgPage, MWRoleMatrix, MWOrgProvidersTab, MWOrgCredits });
 })();

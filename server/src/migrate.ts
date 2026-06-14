@@ -237,6 +237,25 @@ async function migrate() {
     });
   }
 
+  // AI credits — a "credit" is one successful AI generation in the current month.
+  // Per-company monthly pool override (null = plan default from quota.ts) that the
+  // app owner can top up. Per-org behaviour when a limit is hit ('block' refuses &
+  // tells the user; 'fallback' silently uses the offline parser; null = global
+  // default). org_can_set_limit_behavior lets the app owner delegate that choice to
+  // the org owner. Per-member monthly cap (null = no personal cap; draws the pool).
+  if (!(await db.schema.hasColumn('companies', 'ai_credit_limit'))) {
+    await db.schema.alterTable('companies', (t) => { t.integer('ai_credit_limit'); });
+  }
+  if (!(await db.schema.hasColumn('companies', 'ai_limit_behavior'))) {
+    await db.schema.alterTable('companies', (t) => { t.string('ai_limit_behavior'); });
+  }
+  if (!(await db.schema.hasColumn('companies', 'org_can_set_limit_behavior'))) {
+    await db.schema.alterTable('companies', (t) => { t.boolean('org_can_set_limit_behavior').notNullable().defaultTo(false); });
+  }
+  if (!(await db.schema.hasColumn('memberships', 'ai_credit_limit'))) {
+    await db.schema.alterTable('memberships', (t) => { t.integer('ai_credit_limit'); });
+  }
+
   // Backfill: every role that can edit documents should also be able to comment,
   // and the immutable Owner role gets the full (now-larger) permission set.
   const roles = await db('roles').select('id', 'name', 'is_system', 'permissions');

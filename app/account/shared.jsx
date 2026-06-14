@@ -105,6 +105,9 @@
     'invite.create': 'generated an invite link', 'invite.delete': 'deleted an invite link',
     'invite.accept': 'accepted an invite', 'user.signup': 'signed up',
     'member.remove': 'removed a member', 'member.restore': 'restored a member', 'member.role': 'changed a member’s role',
+    'member.role_change': 'changed a member’s role', 'member.credits': 'changed a member’s AI credits',
+    'company.limit_behavior': 'changed the AI at-limit behaviour', 'company.provider_config': 'updated AI provider keys',
+    'admin.company_credits': 'changed a company’s AI credits',
     'role.create': 'created a role', 'role.update': 'updated a role', 'role.delete': 'deleted a role',
     'doc.create': 'created a document', 'doc.update': 'renamed a document', 'doc.delete': 'deleted a document',
     'doc.restore': 'restored a document', 'doc.purge': 'permanently deleted a document', 'doc.share': 'shared a document',
@@ -384,8 +387,34 @@
     );
   }
 
+  // A monthly AI-credit meter (1 credit = 1 successful generation). `status` is the
+  // quota shape { used, limit, remaining, unlimited } from the quota endpoints.
+  function MWCreditBar({ status, label }) {
+    if (!status) return <div className="card usage-card"><div className="dim sm-note">Loading…</div></div>;
+    const used = Number(status.used || 0);
+    const limit = Number(status.limit || 0);
+    const unlimited = !!status.unlimited;
+    const pct = unlimited ? 0 : Math.min(100, Math.round((used / Math.max(1, limit)) * 100));
+    const warn = !unlimited && used >= limit;
+    const num = (n) => Number(n).toLocaleString();
+    return (
+      <div className="card usage-card">
+        <div className="usage-top">
+          <span>{label || 'AI credits this month'}</span>
+          <span>{unlimited ? num(used) + ' used · unlimited' : num(used) + ' / ' + num(limit) + ' credits'}</span>
+        </div>
+        {!unlimited ? <div className={'meter' + (warn ? ' warn' : '')}><i style={{ width: pct + '%' }}></i></div> : null}
+        <div className="dim sm-note credit-foot">
+          {unlimited ? 'No limit set.' : warn
+            ? 'You’re out of credits for this month.'
+            : num(status.remaining != null ? status.remaining : Math.max(0, limit - used)) + ' credits left · resets on the 1st'}
+        </div>
+      </div>
+    );
+  }
+
   Object.assign(window, {
-    MWTopbar, MWBell, MWPalette, MWPill, MWSection, MWTabs, MWSwitch, MWAvatar, MWConfirmDelete, MWUsage, MWUsageChart,
+    MWTopbar, MWBell, MWPalette, MWPill, MWSection, MWTabs, MWSwitch, MWAvatar, MWConfirmDelete, MWUsage, MWUsageChart, MWCreditBar,
     mwHueFor, mwAgo, mwFmtDate, mwFmtWhen, mwCopy, mwDetail, mwProviderLabel, MW_ACTION_LABELS, MW_PROVIDER_LABELS,
   });
 })();

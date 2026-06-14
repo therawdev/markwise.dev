@@ -5,7 +5,7 @@ import { activeProvider, providerStatus, PROVIDERS } from '../providers/index.js
 import { resolveRuntime } from '../providers/config.js';
 import { aiUsageSummary } from '../usage.js';
 import { aiLimiter } from '../rate-limit.js';
-import { aiQuotaStatus } from '../quota.js';
+import { aiQuotaStatus, aiGenerationGate } from '../quota.js';
 
 export const aiRouter = Router();
 aiRouter.use(requireAuth);
@@ -44,16 +44,20 @@ aiRouter.post('/complete', aiLimiter, async (req, res) => {
     return res.status(403).json({ error: 'You need the AI permission in this company' });
   }
 
-  // Monthly quota: a hard block once the configured limit is hit. App owners are exempt.
+  // Monthly AI credits: block once a member's cap, the company pool, or the personal
+  // quota is hit. App owners are exempt. The response carries `behavior` so the
+  // frontend knows whether to show an "out of credits" message ('block') or quietly
+  // use the offline parser ('fallback').
   if (!req.user!.is_app_owner) {
-    const quota = await aiQuotaStatus(companyId != null ? { companyId } : { userId: req.user!.id });
-    if (!quota.unlimited && quota.used >= quota.limit) {
-      return res.status(429).json({
-        error: `Monthly AI limit reached (${quota.limit} this month). ${
-          quota.scope === 'company' ? 'Upgrade the plan or ask an owner to raise the limit.' : 'It resets on the 1st.'
-        }`,
-        quota,
-      });
+    const gate = await aiGenerationGate(req.user!.id, companyId);
+    if (!gate.allowed) {
+      const q = gate.quota!;
+      const msg = gate.hit === 'member'
+        ? `You've used all your AI credits this month (${q.limit}). Ask a company owner to raise your limit.`
+        : gate.hit === 'company'
+          ? `Your company's monthly AI credits are used up (${q.limit}). An owner can add more credits.`
+          : `Monthly AI limit reached (${q.limit} this month). It resets on the 1st.`;
+      return res.status(429).json({ error: msg, code: 'quota_exceeded', behavior: gate.behavior, scope: gate.hit, quota: q });
     }
   }
 

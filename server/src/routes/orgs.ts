@@ -5,7 +5,7 @@ import { db, audit } from '../db.js';
 import { requireAuth, hasPermission } from '../middleware.js';
 import { DEFAULT_ROLES, PERMISSIONS, isValidPermissionList } from '../permissions.js';
 import { aiUsageSummary } from '../usage.js';
-import { aiQuotaStatus } from '../quota.js';
+import { aiQuotaStatus, aiMemberQuotaStatus, limitBehaviorFor, orgMemberDefaultCredits } from '../quota.js';
 import { listProviderConfigs, setProviderConfig } from '../providers/config.js';
 import { secretsConfigured } from '../secrets.js';
 import { PROVIDERS } from '../providers/index.js';
@@ -426,6 +426,124 @@ orgsRouter.get('/:id/usage', async (req, res) => {
     ai_month: quota.used,
     ai_limit: quota.limit, // 0 = unlimited
   });
+});
+
+// ---- AI credits: the company's monthly pool + each member's allocation. The org
+// owner (org:billing) distributes credits per member; the app owner tops up the pool.
+orgsRouter.get('/:id/credits', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await hasPermission(req.user!, companyId, 'org:billing')) && !req.user!.is_app_owner) {
+    return res.status(403).json({ error: 'You need the billing permission' });
+  }
+  const company = await db('companies').where({ id: companyId }).first();
+  if (!company) return res.status(404).json({ error: 'Company not found' });
+  const pool = await aiQuotaStatus({ companyId });
+  const def = await orgMemberDefaultCredits();
+  const members = await db('memberships')
+    .join('users', 'users.id', 'memberships.user_id')
+    .join('roles', 'roles.id', 'memberships.role_id')
+    .where('memberships.company_id', companyId)
+    .select('users.id', 'users.name', 'users.email', 'roles.name as role', 'memberships.ai_credit_limit');
+  const rows = [];
+  for (const m of members) {
+    const st = await aiMemberQuotaStatus(companyId, m.id, def);
+    rows.push({
+      user_id: m.id, name: m.name, email: m.email, role: m.role,
+      limit: st.limit, used: st.used, remaining: st.remaining, unlimited: st.unlimited,
+      custom: m.ai_credit_limit != null,
+    });
+  }
+  const value = company.ai_limit_behavior === 'block' || company.ai_limit_behavior === 'fallback' ? company.ai_limit_behavior : null;
+  res.json({
+    pool: { used: pool.used, limit: pool.limit, remaining: pool.remaining, unlimited: pool.unlimited },
+    default_member_credits: def,
+    behavior: { value, effective: await limitBehaviorFor(companyId), can_org_set: !!company.org_can_set_limit_behavior },
+    members: rows,
+    // App-owner-only raw controls (pool top-up, behaviour, delegation).
+    ...(req.user!.is_app_owner ? { admin: {
+      plan: company.plan,
+      ai_credit_limit: company.ai_credit_limit == null ? null : Number(company.ai_credit_limit),
+      ai_limit_behavior: value,
+      org_can_set_limit_behavior: !!company.org_can_set_limit_behavior,
+    } } : {}),
+  });
+});
+
+// App owner only: top up the company pool, set behaviour directly, and delegate the
+// behaviour choice to the org owner.
+orgsRouter.put('/:id/admin-credits', async (req, res) => {
+  if (!req.user!.is_app_owner) return res.status(403).json({ error: 'App owner only' });
+  const companyId = Number(req.params.id);
+  const company = await db('companies').where({ id: companyId }).first();
+  if (!company) return res.status(404).json({ error: 'Company not found' });
+  const patch: Record<string, unknown> = {};
+  if (req.body?.ai_credit_limit !== undefined) {
+    const v = req.body.ai_credit_limit;
+    if (v === null || v === '') patch.ai_credit_limit = null;
+    else {
+      const n = Math.floor(Number(v));
+      if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: 'ai_credit_limit must be a non-negative number or null' });
+      patch.ai_credit_limit = n;
+    }
+  }
+  if (req.body?.ai_limit_behavior !== undefined) {
+    const b = req.body.ai_limit_behavior;
+    if (b !== null && b !== 'block' && b !== 'fallback') return res.status(400).json({ error: 'ai_limit_behavior must be "block", "fallback", or null' });
+    patch.ai_limit_behavior = b;
+  }
+  if (req.body?.org_can_set_limit_behavior !== undefined) {
+    patch.org_can_set_limit_behavior = !!req.body.org_can_set_limit_behavior;
+  }
+  if (Object.keys(patch).length) {
+    await db('companies').where({ id: companyId }).update(patch);
+    await audit(req.user!.id, 'admin.company_credits', `company:${companyId}`, patch);
+  }
+  res.json({ ok: true });
+});
+
+// The signed-in member's own credit standing in this company (for their bar).
+orgsRouter.get('/:id/my-credits', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await hasPermission(req.user!, companyId, 'doc:view')) && !req.user!.is_app_owner) {
+    return res.status(403).json({ error: 'Not a member of this company' });
+  }
+  res.json(await aiMemberQuotaStatus(companyId, req.user!.id));
+});
+
+// Set a member's monthly credit cap (null = org default, 0 = unlimited).
+const memberCreditsSchema = z.object({ limit: z.number().int().min(0).max(1_000_000).nullable() });
+orgsRouter.put('/:id/members/:userId/credits', async (req, res) => {
+  const companyId = Number(req.params.id);
+  const userId = Number(req.params.userId);
+  if (!(await hasPermission(req.user!, companyId, 'org:billing'))) {
+    return res.status(403).json({ error: 'You need the billing permission' });
+  }
+  const parsed = memberCreditsSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'limit must be a non-negative integer or null' });
+  const membership = await db('memberships').where({ company_id: companyId, user_id: userId }).first();
+  if (!membership) return res.status(404).json({ error: 'Not a member of this company' });
+  await db('memberships').where({ company_id: companyId, user_id: userId }).update({ ai_credit_limit: parsed.data.limit });
+  await audit(req.user!.id, 'member.credits', `user:${userId}`, { company_id: companyId, limit: parsed.data.limit });
+  res.json(await aiMemberQuotaStatus(companyId, userId));
+});
+
+// Org owner sets the at-limit behaviour — only when the app owner has delegated it.
+const behaviorSchema = z.object({ behavior: z.enum(['block', 'fallback']) });
+orgsRouter.put('/:id/limit-behavior', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await hasPermission(req.user!, companyId, 'org:billing'))) {
+    return res.status(403).json({ error: 'You need the billing permission' });
+  }
+  const company = await db('companies').where({ id: companyId }).first();
+  if (!company) return res.status(404).json({ error: 'Company not found' });
+  if (!company.org_can_set_limit_behavior) {
+    return res.status(403).json({ error: 'The app owner has not enabled this control for your company' });
+  }
+  const parsed = behaviorSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'behavior must be "block" or "fallback"' });
+  await db('companies').where({ id: companyId }).update({ ai_limit_behavior: parsed.data.behavior });
+  await audit(req.user!.id, 'company.limit_behavior', `company:${companyId}`, { behavior: parsed.data.behavior });
+  res.json({ behavior: parsed.data.behavior });
 });
 
 // Accept an invite (any signed-in user).
