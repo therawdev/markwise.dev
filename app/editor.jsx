@@ -93,27 +93,16 @@
       const curPct = parseFloat(fig.style.width) || (v.width || 100);
       const pw = (fr.width * 100) / curPct;
       const start = fr.width;
-      const wrap = fig.querySelector('.dg-wrap');
-      const svgEl = wrap && wrap.querySelector('svg');
-      const wr = wrap ? wrap.getBoundingClientRect() : null;
-      const hsc0 = v.hscale || 1;
-      const sx = e.clientX, sy = e.clientY;
-      // horizontal drag → width %, vertical drag → independent height stretch
+      const sx = e.clientX;
+      // Uniform resize: width drives the size and the diagram keeps its own aspect ratio.
+      // (Previously a corner drag also stretched the height independently, which distorted
+      // the figure and made resizing feel like the image was being dragged.)
       const calcW = (ev) => Math.min(100, Math.max(38, ((start + (ev.clientX - sx)) / pw) * 100));
-      const calcH = (ev) => (wr ? Math.min(3, Math.max(0.5, (hsc0 * (wr.height + (ev.clientY - sy))) / Math.max(1, wr.height))) : hsc0);
-      const move = (ev) => {
-        fig.style.width = calcW(ev) + '%';
-        if (wrap && wr) {
-          const baseAspect = (wr.width / Math.max(1, wr.height)) * hsc0; // undistorted aspect
-          wrap.style.aspectRatio = String(baseAspect / calcH(ev));
-          if (svgEl) { svgEl.setAttribute('preserveAspectRatio', 'none'); svgEl.style.height = '100%'; }
-        }
-      };
+      const move = (ev) => { fig.style.width = calcW(ev) + '%'; };
       const up = (ev) => {
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
-        if (wrap) wrap.style.aspectRatio = '';
-        onPatch({ width: Math.round(calcW(ev)), hscale: Math.round(calcH(ev) * 100) / 100 });
+        onPatch({ width: Math.round(calcW(ev)), hscale: 1 });
       };
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);

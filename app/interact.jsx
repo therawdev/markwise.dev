@@ -41,6 +41,7 @@
     const [pop, setPop] = useState(null);         // 'color' | 'text' | 'size' | 'line'
     const [boxes, setBoxes] = useState([]);       // px boxes of selected elements
     const [liveSc, setLiveSc] = useState(null);   // live scale factor while corner-dragging
+    const [liveRot, setLiveRot] = useState(null); // live rotation delta (deg) while rotate-handle-dragging
     const [mq, setMq] = useState(null);           // marquee rect {x0,y0,x1,y1}
     const [inline, setInline] = useState(null);   // { d, field, box, fontPx } — in-place text editing
     const [vbCrop, setVbCrop] = useState(null);    // tightened vertical viewBox {y,h} trimming dead space
@@ -54,6 +55,10 @@
       return base;
     };
     const liveFor = (d) => (liveSc != null && isSel(d) ? liveSc : 1);
+    const liveRotFor = (d) => (liveRot != null && isSel(d) ? liveRot : 0);
+    // combined scale+rotate around an element's own centre (used for items, texts, icons)
+    const xf = (s, r) => { const p = []; if (s !== 1) p.push(`scale(${s})`); if (r) p.push(`rotate(${r}deg)`); return p.length ? p.join(' ') : null; };
+    const spin = (node, s, r, key) => { const tf = xf(s, r); return tf ? <g key={key} style={{ transformBox: 'fill-box', transformOrigin: 'center', transform: tf }}>{node}</g> : node; };
     // when group-resizing, each element's center must also move relative to the union center
     const boxOf = (d) => boxes.find((b) => b.k === dkey(d));
     const unionOf = (bs) => {
@@ -287,6 +292,7 @@
           const [dx, dy] = off(key);
           const moved = dx || dy;
           const ssc = (layout['scsub:' + i + ':' + sub] || 1) * liveFor(desc);
+          const srot = (layout['rotsub:' + i + ':' + sub] || 0) + liveRotFor(desc);
           const [slx, sly] = liveOffset(desc);
           const tcol = layout['clsub:' + i + ':' + sub];
           const cloned = React.cloneElement(node, {
@@ -298,7 +304,7 @@
             onClick: (e) => pick(e, desc),
             onDoubleClick: (e) => { e.stopPropagation(); beginInline(desc); },
           });
-          return ssc !== 1 ? <g key={'ssw' + i + sub} style={{ transformBox: 'fill-box', transformOrigin: 'center', transform: `scale(${ssc})` }}>{cloned}</g> : cloned;
+          return spin(cloned, ssc, srot, 'ssw' + i + sub);
         }
         const kids = node.props && node.props.children;
         if (kids == null || typeof kids !== 'object') return node;
@@ -320,6 +326,7 @@
         const desc = { kind: 'item', i };
         const [dx, dy] = off('it:' + i);
         const sc = (it.scale || 1) * liveFor(desc);
+        const rot = (it.rot || 0) + liveRotFor(desc);
         const [ilx, ily] = liveOffset(desc);
         const inner = wrapTexts(el, it, i);
         return (
@@ -332,7 +339,7 @@
             onClick={(e) => pick(e, desc)}
             onDoubleClick={(e) => { e.stopPropagation(); beginInline(desc); }}
           >
-            {sc !== 1 ? <g style={{ transformBox: 'fill-box', transformOrigin: 'center', transform: `scale(${sc})` }}>{inner}</g> : inner}
+            {spin(inner, sc, rot, 'isr' + i)}
           </g>
         );
       }
@@ -342,8 +349,9 @@
       const desc = { kind: 'gfx', key, i: gi };
       const [gdx, gdy] = off('gfx:' + key);
       const gsc = (layout['scgfx:' + key] || 1) * liveFor(desc);
+      const grot = (layout['rotgfx:' + key] || 0) + liveRotFor(desc);
       const [glx, gly] = liveOffset(desc);
-      const inner2 = gsc !== 1 ? <g style={{ transformBox: 'fill-box', transformOrigin: 'center', transform: `scale(${gsc})` }}>{el}</g> : el;
+      const inner2 = spin(el, gsc, grot, 'gsr' + key);
       return (
         <g
           key={'wg' + key}
@@ -423,7 +431,15 @@
       const lines = String(nt.text || '').split('\n');
       const desc = { kind: 'note', id: nt.id };
       const size = (nt.size || 13) * liveFor(desc);
+      const nrot = (nt.rot || 0) + liveRotFor(desc);
       const [nlx, nly] = liveOffset(desc);
+      const noteText = (
+        <text x={0} y={0} fontFamily={D.F} fontSize={size} fontWeight={600} fill={c} style={{ paintOrder: 'stroke', stroke: 'rgba(255,255,255,0.9)', strokeWidth: 3.5 }}>
+          {lines.map((l, k) => (
+            <tspan key={k} x={0} dy={k === 0 ? 0 : size * 1.3}>{l}</tspan>
+          ))}
+        </text>
+      );
       return (
         <g
           key={'note' + nt.id}
@@ -434,11 +450,7 @@
           onClick={(e) => pick(e, desc)}
           onDoubleClick={(e) => { e.stopPropagation(); beginInline(desc); }}
         >
-          <text x={0} y={0} fontFamily={D.F} fontSize={size} fontWeight={600} fill={c} style={{ paintOrder: 'stroke', stroke: 'rgba(255,255,255,0.9)', strokeWidth: 3.5 }}>
-            {lines.map((l, k) => (
-              <tspan key={k} x={0} dy={k === 0 ? 0 : size * 1.3}>{l}</tspan>
-            ))}
-          </text>
+          {spin(noteText, 1, nrot, 'nr' + nt.id)}
         </g>
       );
     });
@@ -523,6 +535,35 @@
             const [ox, oy] = groupOffset(d, nv / curN);
             nnotes = (nnotes || (visual.notes || []).slice()).map((n) => (n.id === d.id ? { ...n, size: nv, x: n.x + ox, y: n.y + oy } : n));
           }
+        }
+      });
+      const patch = {};
+      if (nitems) patch.spec = { ...visual.spec, items: nitems };
+      if (touchedLayout) patch.layout = nl;
+      if (nnotes) patch.notes = nnotes;
+      if (Object.keys(patch).length) onPatch(patch);
+    };
+    // rotate each selected element about its own centre. `deg` is added to the
+    // current angle (or set absolutely when abs=true, e.g. reset to 0).
+    const applyRotate = (deg, abs) => {
+      if (!onPatch || !sels.length || (!abs && !deg)) return;
+      const norm = (v) => { let r = ((v % 360) + 360) % 360; if (r > 180) r -= 360; return Math.round(r); };
+      const nl = { ...layout };
+      let nitems = null, nnotes = null, touchedLayout = false;
+      sels.forEach((d) => {
+        if (d.kind === 'item') {
+          const cur = (items[d.i] && items[d.i].rot) || 0;
+          const nv = norm(abs ? deg : cur + deg);
+          nitems = (nitems || items.slice()).map((x, k) => (k === d.i ? { ...x, rot: nv || undefined } : x));
+        } else if (d.kind === 'sub' || d.kind === 'gfx') {
+          const rk = d.kind === 'sub' ? 'rotsub:' + d.i + ':' + d.sub : 'rotgfx:' + d.key;
+          const nv = norm(abs ? deg : (layout[rk] || 0) + deg);
+          if (nv) nl[rk] = nv; else delete nl[rk];
+          touchedLayout = true;
+        } else if (d.kind === 'note') {
+          const nt = (visual.notes || []).find((n) => n.id === d.id) || {};
+          const nv = norm(abs ? deg : (nt.rot || 0) + deg);
+          nnotes = (nnotes || (visual.notes || []).slice()).map((n) => (n.id === d.id ? { ...n, rot: nv || undefined } : n));
         }
       });
       const patch = {};
@@ -624,6 +665,34 @@
         const f = calc(ev);
         setLiveSc(null);
         commitScale(f);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    };
+
+    // drag the knob above the selection to rotate every selected element about its centre
+    const startRotateDrag = (e) => {
+      if (e.button === 2) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const box = e.currentTarget.closest('.dg-selbox');
+      if (!box) return;
+      const br = box.getBoundingClientRect();
+      const cx0 = br.left + br.width / 2, cy0 = br.top + br.height / 2;
+      const a0 = Math.atan2(e.clientY - cy0, e.clientX - cx0);
+      const calc = (ev) => {
+        let d = ((Math.atan2(ev.clientY - cy0, ev.clientX - cx0) - a0) * 180) / Math.PI;
+        if (ev.shiftKey) d = Math.round(d / 15) * 15;
+        return Math.round(d);
+      };
+      const move = (ev) => setLiveRot(calc(ev));
+      const up = (ev) => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        const d = calc(ev);
+        setLiveRot(null);
+        draggedRef.current = d !== 0;
+        if (d) applyRotate(d);
       };
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
@@ -756,6 +825,7 @@
           <div className="dg-selbox" style={{ left: ubx - 5, top: uby - 5, width: ubw + 10, height: ubh + 10 }} onPointerDown={startBoxDrag}>
             <i></i><i></i><i></i>
             {canResize ? <i className="dg-rs" title="Drag to resize" onPointerDown={startScaleDrag}></i> : <i></i>}
+            {canResize ? <i className="dg-rot" title="Drag to rotate · Shift = 15° snap · double-click to reset" onPointerDown={startRotateDrag} onDoubleClick={(e) => { e.stopPropagation(); applyRotate(0, true); }}></i> : null}
           </div>
         ) : null}
         {editable && anySel && !inline ? (

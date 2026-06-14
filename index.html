@@ -799,6 +799,9 @@
   .dg-selbox i:nth-child(3) { left: -5px; bottom: -5px; }
   .dg-selbox i:nth-child(4) { right: -5px; bottom: -5px; }
   .dg-selbox i.dg-rs { pointer-events: auto; cursor: nwse-resize; width: 11px; height: 11px; right: -7px; bottom: -7px; }
+  /* rotate knob sits below the box so the floating toolbar (which hovers above the box) never covers it */
+  .dg-selbox i.dg-rot { pointer-events: auto; cursor: grab; width: 13px; height: 13px; border-radius: 50%; left: 50%; bottom: -26px; margin-left: -6.5px; right: auto; top: auto; }
+  .dg-selbox i.dg-rot::after { content: ''; position: absolute; left: 50%; bottom: 100%; width: 1.5px; height: 13px; margin-left: -.75px; background: #29b6f2; pointer-events: none; }
   .dg-selbox.faint { border-style: dashed; border-color: rgba(41,182,242,.55); pointer-events: none; }
   .dg-selbox.faint i { display: none; }
   .dg-marquee { position: absolute; border: 1.5px dashed #29b6f2; background: rgba(41,182,242,.08); z-index: 24; pointer-events: none; }
