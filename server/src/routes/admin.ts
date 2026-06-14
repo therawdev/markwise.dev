@@ -6,6 +6,7 @@ import { PROVIDERS, providerStatus } from '../providers/index.js';
 import { listProviderConfigs, setProviderConfig } from '../providers/config.js';
 import { secretsConfigured } from '../secrets.js';
 import { aiUsageSummary } from '../usage.js';
+import { getQuotas, DEFAULT_QUOTAS, type QuotaConfig } from '../quota.js';
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth);
@@ -178,6 +179,27 @@ adminRouter.post('/providers/:id/test', async (req, res) => {
   } catch (e) {
     res.json({ ok: false, reason: e instanceof Error ? e.message : 'request failed' });
   }
+});
+
+// ---- AI quotas (monthly hard limits per plan / individual) ----
+adminRouter.get('/quotas', async (_req, res) => {
+  res.json(await getQuotas());
+});
+
+adminRouter.put('/quotas', async (req, res) => {
+  const next: QuotaConfig = { ...DEFAULT_QUOTAS };
+  for (const k of ['free_monthly', 'pro_monthly', 'user_monthly'] as const) {
+    if (req.body?.[k] !== undefined) {
+      const n = Math.floor(Number(req.body[k]));
+      if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `${k} must be a non-negative number (0 = unlimited)` });
+      next[k] = n;
+    } else {
+      next[k] = (await getQuotas())[k];
+    }
+  }
+  await setSetting('ai_quotas', next);
+  await audit(req.user!.id, 'admin.quotas', 'settings', next as unknown as Record<string, unknown>);
+  res.json(next);
 });
 
 // ---- AI usage (global, across the whole platform) ----

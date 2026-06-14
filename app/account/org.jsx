@@ -268,6 +268,7 @@
     ];
     if (canBilling)  tabDefs.push({ id: 'billing',  label: 'Billing' });
     tabDefs.push(    { id: 'usage',    label: 'AI usage' });
+    if (canSettings) tabDefs.push({ id: 'ai-keys',  label: 'AI keys' });
     tabDefs.push(    { id: 'activity', label: 'Activity' });
     if (canSettings) tabDefs.push({ id: 'settings', label: 'Settings' });
 
@@ -547,6 +548,11 @@
             </MWSection>
           ) : null}
 
+          {/* ===== AI KEYS TAB (bring-your-own provider keys) ===== */}
+          {tab === 'ai-keys' && canSettings ? (
+            <MWOrgProvidersTab companyId={companyId} toast={toast} />
+          ) : null}
+
           {/* ===== ACTIVITY TAB ===== */}
           {tab === 'activity' ? (
             <MWActivityTab companyId={companyId} orgName={org.name} />
@@ -588,7 +594,8 @@
 
     const plan     = org.plan || 'free';
     const docLimit = plan === 'pro' ? Infinity : 3;
-    const aiLimit  = plan === 'pro' ? Infinity : 100;
+    // The AI limit is the server-enforced monthly quota (0 = unlimited).
+    const aiLimit  = usage && Number(usage.ai_limit) > 0 ? Number(usage.ai_limit) : Infinity;
     const meterPct = (used, limit) => limit === Infinity ? Math.min(100, Math.round(used / 5)) : Math.min(100, Math.round(used / limit * 100));
     const meterWarn = (used, limit) => limit !== Infinity && used >= limit;
 
@@ -684,5 +691,97 @@
     );
   }
 
-  Object.assign(window, { MWOrgPage, MWRoleMatrix });
+  // ===== AI KEYS TAB — per-company bring-your-own provider keys =====
+  // A company can store its own provider API key/model (encrypted); its members'
+  // AI generations then run on it, falling back to the platform key when unset.
+  function MWOrgProvidersTab({ companyId, toast }) {
+    const API = window.MarkwiseAPI;
+    const [data, setData] = useState(null);     // { secretsConfigured, providers: [...] }
+    const [keyDrafts, setKeyDrafts] = useState({});
+    const [modelDrafts, setModelDrafts] = useState({});
+    const [busy, setBusy] = useState('');
+    const [test, setTest] = useState({});
+
+    const load = () => API.get('/api/orgs/' + companyId + '/providers').then(setData).catch((e) => toast(e.message));
+    useEffect(() => { load(); }, [companyId]);
+
+    const save = async (provider, patch) => {
+      setBusy(provider);
+      try {
+        const r = await API.put('/api/orgs/' + companyId + '/providers/' + provider, patch);
+        if (patch.apiKey !== undefined) setKeyDrafts((d) => ({ ...d, [provider]: '' }));
+        setData(r);
+        toast('Saved ' + provider);
+      } catch (e) { toast(e.message); } finally { setBusy(''); }
+    };
+    const runTest = async (provider) => {
+      setBusy(provider);
+      setTest((t) => ({ ...t, [provider]: undefined }));
+      try {
+        const r = await API.post('/api/orgs/' + companyId + '/providers/' + provider + '/test', {});
+        setTest((t) => ({ ...t, [provider]: r }));
+      } catch (e) { setTest((t) => ({ ...t, [provider]: { ok: false, reason: e.message } })); }
+      finally { setBusy(''); }
+    };
+
+    return (
+      <MWSection
+        title="AI provider keys"
+        sub="Use your own provider API keys so AI generations bill to your account. When a provider has no key here, it falls back to the platform default."
+      >
+        {!data ? (
+          <div className="card empty-note">Loading…</div>
+        ) : !data.secretsConfigured ? (
+          <div className="card empty-note">Key storage isn’t configured on the server yet. Ask the platform admin to set it up.</div>
+        ) : (
+          data.providers.map((c) => {
+            const busyNow = busy === c.provider;
+            const tr = test[c.provider];
+            const modelVal = modelDrafts[c.provider] !== undefined ? modelDrafts[c.provider] : (c.model || '');
+            const usingOwn = c.keySource === 'company';
+            return (
+              <div key={c.provider} className="card pad" style={{ marginBottom: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <b>{c.provider}</b>
+                  <MWPill tone={usingOwn ? 'green' : 'grey'}>{usingOwn ? 'Using your key' : (c.hasKey ? 'Using platform key' : 'No key')}</MWPill>
+                </div>
+                {c.needsKey ? (
+                  <div style={{ marginBottom: 8 }}>
+                    <label className="fld-label" style={{ fontSize: 11 }}>
+                      API key — {usingOwn ? 'your key set (' + c.keyMasked + ')' : (c.hasKey ? 'falling back to the platform key' : 'none set')}
+                    </label>
+                    <div className="inline-form">
+                      <input className="fld" type="password" style={{ flex: 1 }}
+                        placeholder={usingOwn ? 'Enter a new key to replace yours' : 'Paste your API key'}
+                        value={keyDrafts[c.provider] || ''}
+                        onChange={(e) => setKeyDrafts((d) => ({ ...d, [c.provider]: e.target.value }))} />
+                      <button className="secondary-btn" disabled={busyNow || !keyDrafts[c.provider]} onClick={() => save(c.provider, { apiKey: keyDrafts[c.provider] })}>Save key</button>
+                      {usingOwn ? (
+                        <button className="ghost-btn" disabled={busyNow} onClick={() => save(c.provider, { apiKey: '' })}>Remove</button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="dim sm-note" style={{ marginBottom: 8 }}>CLI-based provider — no API key needed.</div>
+                )}
+                <div className="inline-form">
+                  <input className="fld" style={{ flex: 1 }} placeholder="model (platform default if blank)" value={modelVal}
+                    onChange={(e) => setModelDrafts((d) => ({ ...d, [c.provider]: e.target.value }))} />
+                  <button className="secondary-btn" disabled={busyNow} onClick={() => save(c.provider, { model: modelVal })}>Save model</button>
+                  <button className="ghost-btn" disabled={busyNow} onClick={() => runTest(c.provider)}>{busyNow ? 'Testing…' : 'Test'}</button>
+                </div>
+                {tr ? (
+                  <div className="sm-note" style={{ marginTop: 6, color: tr.ok ? '#2f8a4e' : '#b4462f' }}>
+                    {tr.ok ? '✓ ' + (tr.sample || 'OK') : '✗ ' + (tr.reason || 'failed')}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })
+        )}
+      </MWSection>
+    );
+  }
+
+  Object.assign(window, { MWOrgPage, MWRoleMatrix, MWOrgProvidersTab });
 })();

@@ -5,6 +5,7 @@ import { activeProvider, providerStatus, PROVIDERS } from '../providers/index.js
 import { resolveRuntime } from '../providers/config.js';
 import { aiUsageSummary } from '../usage.js';
 import { aiLimiter } from '../rate-limit.js';
+import { aiQuotaStatus } from '../quota.js';
 
 export const aiRouter = Router();
 aiRouter.use(requireAuth);
@@ -16,6 +17,15 @@ aiRouter.get('/status', async (_req, res) => {
 // The signed-in user's own AI usage.
 aiRouter.get('/usage', async (req, res) => {
   res.json(await aiUsageSummary({ userId: req.user!.id, days: req.query.days ? Number(req.query.days) : undefined }));
+});
+
+// The signed-in user's monthly quota standing (personal scope, or a company's when ?company_id given).
+aiRouter.get('/quota', async (req, res) => {
+  const companyId = req.query.company_id ? Number(req.query.company_id) : null;
+  if (companyId != null && !(await hasPermission(req.user!, companyId, 'doc:view'))) {
+    return res.status(403).json({ error: 'No access' });
+  }
+  res.json(await aiQuotaStatus(companyId != null ? { companyId } : { userId: req.user!.id }));
 });
 
 /**
@@ -34,6 +44,19 @@ aiRouter.post('/complete', aiLimiter, async (req, res) => {
     return res.status(403).json({ error: 'You need the AI permission in this company' });
   }
 
+  // Monthly quota: a hard block once the configured limit is hit. App owners are exempt.
+  if (!req.user!.is_app_owner) {
+    const quota = await aiQuotaStatus(companyId != null ? { companyId } : { userId: req.user!.id });
+    if (!quota.unlimited && quota.used >= quota.limit) {
+      return res.status(429).json({
+        error: `Monthly AI limit reached (${quota.limit} this month). ${
+          quota.scope === 'company' ? 'Upgrade the plan or ask an owner to raise the limit.' : 'It resets on the 1st.'
+        }`,
+        quota,
+      });
+    }
+  }
+
   // The selected provider goes first; unless failover is disabled, the other
   // available providers back it up so a flaky provider degrades to a slower
   // AI answer instead of the frontend's crude offline parser.
@@ -45,13 +68,13 @@ aiRouter.post('/complete', aiLimiter, async (req, res) => {
 
   let lastErr: unknown = null;
   for (const provider of chain) {
-    const gate = await provider.available();
+    const gate = await provider.available(companyId);
     if (!gate.ok) { lastErr = new Error(gate.reason || 'unavailable'); continue; }
     const isFailover = provider.id !== primary.id;
     const rt = await resolveRuntime(provider.id, companyId);
     const t0 = Date.now();
     try {
-      const result = await provider.complete(prompt);
+      const result = await provider.complete(prompt, companyId);
       const ms = Date.now() - t0;
       await db('ai_usage').insert({ user_id: req.user!.id, company_id: companyId, provider: provider.id, kind: 'complete', ok: true });
       await db('ai_requests').insert({

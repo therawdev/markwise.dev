@@ -17,20 +17,20 @@ export const claudeProvider: AIProvider = {
   id: 'claude',
   label: 'Claude SDK / Claude API',
 
-  async available() {
+  async available(companyId: number | null = null) {
     if (!(await claudeApiEnabled())) {
       return { ok: false, reason: 'Claude API is disabled (enable it in the admin panel)' };
     }
-    const rt = await resolveRuntime('claude');
+    const rt = await resolveRuntime('claude', companyId);
     if (!rt.enabled) return { ok: false, reason: 'Claude is disabled' };
     if (!rt.apiKey) return { ok: false, reason: 'No Anthropic API key — set it in the admin panel' };
     return { ok: true };
   },
 
-  async complete(prompt: string): Promise<CompletionResult> {
-    const gate = await this.available();
+  async complete(prompt: string, companyId: number | null = null): Promise<CompletionResult> {
+    const gate = await this.available(companyId);
     if (!gate.ok) throw new Error(gate.reason);
-    const rt = await resolveRuntime('claude');
+    const rt = await resolveRuntime('claude', companyId);
     const model = rt.model || DEFAULT_MODEL;
     const client = new Anthropic({ apiKey: rt.apiKey });
     const response = await client.messages.create({

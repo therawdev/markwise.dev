@@ -26,8 +26,8 @@ export const claudeCodeProvider: AIProvider = {
   id: 'claude_code',
   label: 'Claude Code (headless CLI)',
 
-  async available() {
-    const rt = await resolveRuntime('claude_code');
+  async available(companyId: number | null = null) {
+    const rt = await resolveRuntime('claude_code', companyId);
     if (!rt.enabled) return { ok: false, reason: 'Claude Code is disabled' };
     try {
       await run(['--version']);
@@ -37,8 +37,8 @@ export const claudeCodeProvider: AIProvider = {
     }
   },
 
-  async complete(prompt: string): Promise<CompletionResult> {
-    const rt = await resolveRuntime('claude_code');
+  async complete(prompt: string, companyId: number | null = null): Promise<CompletionResult> {
+    const rt = await resolveRuntime('claude_code', companyId);
     const model = rt.model || DEFAULT_MODEL;
     // Prompt goes via stdin to avoid argv length limits and shell-quoting issues.
     const out = await run(['-p', '--output-format', 'json', '--model', model], prompt);

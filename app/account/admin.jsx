@@ -61,6 +61,11 @@
     const [aiReqDetail, setAiReqDetail] = useState(null); // full row in the viewer
     const [usage, setUsage] = useState(null); // global AI usage summary
 
+    // monthly AI quotas
+    const [quotas, setQuotas] = useState(null);      // { free_monthly, pro_monthly, user_monthly }
+    const [quotaDraft, setQuotaDraft] = useState(null);
+    const [quotaBusy, setQuotaBusy] = useState(false);
+
     const [userQ, setUserQ] = useState('');
     const [coQ, setCoQ] = useState('');
     const [newCo, setNewCo] = useState('');
@@ -94,11 +99,21 @@
 
     useEffect(() => { loadAll(); }, [loadAll]);
 
-    // Lazy-load AI log / usage only when their tab is open.
+    // Lazy-load AI log / usage / quotas only when their tab is open.
     useEffect(() => {
       if (tab === 'ailogs') API.get('/api/admin/ai-requests' + (reqStatus ? '?status=' + reqStatus : '')).then(setAiReqs).catch(() => {});
       if (tab === 'usage') API.get('/api/admin/ai-usage').then(setUsage).catch(() => {});
+      if (tab === 'quotas') API.get('/api/admin/quotas').then((q) => { setQuotas(q); setQuotaDraft(q); }).catch(() => {});
     }, [tab, reqStatus]);
+
+    const saveQuotas = async () => {
+      setQuotaBusy(true);
+      try {
+        const saved = await API.put('/api/admin/quotas', quotaDraft);
+        setQuotas(saved); setQuotaDraft(saved);
+        toast('Quotas saved');
+      } catch (e) { toast(e.message); } finally { setQuotaBusy(false); }
+    };
     const openReq = (id) => API.get('/api/admin/ai-requests/' + id).then(setAiReqDetail).catch((e) => toast(e.message));
 
     const refetchStats = () => API.get('/api/admin/stats').then(setStats).catch(() => {});
@@ -249,6 +264,7 @@
       { id: 'overview', label: 'Overview' },
       { id: 'ai', label: 'AI provider' },
       { id: 'usage', label: 'AI usage' },
+      { id: 'quotas', label: 'Quotas' },
       { id: 'ailogs', label: 'AI logs' },
       { id: 'users', label: 'Users', count: users.length },
       { id: 'companies', label: 'Companies', count: companies.length },
@@ -409,6 +425,40 @@
           {!loading && tab === 'usage' ? (
             <MWSection title="AI usage" sub="Requests, tokens & estimated cost across the whole platform.">
               <MWUsage usage={usage} />
+            </MWSection>
+          ) : null}
+
+          {!loading && tab === 'quotas' ? (
+            <MWSection
+              title="Monthly AI quotas"
+              sub="Hard limit on successful AI generations per calendar month. 0 = unlimited. App owners are always exempt. This is on top of the per-minute burst rate limit."
+            >
+              {!quotaDraft ? (
+                <div className="card empty-note">Loading…</div>
+              ) : (
+                <div className="card pad">
+                  {[
+                    ['free_monthly', 'Companies on the Free plan', 'Per company, per month'],
+                    ['pro_monthly', 'Companies on the Pro plan', 'Per company, per month'],
+                    ['user_monthly', 'Individual users', 'Personal (non-company) usage, per month'],
+                  ].map(([key, label, hint]) => (
+                    <div className="set-row" key={key}>
+                      <div>
+                        <b>{label}</b>
+                        <p>{hint}{Number(quotaDraft[key]) <= 0 ? ' — currently unlimited' : ''}</p>
+                      </div>
+                      <input
+                        className="fld" type="number" min="0" style={{ width: 120 }}
+                        value={quotaDraft[key]}
+                        onChange={(e) => setQuotaDraft((d) => ({ ...d, [key]: e.target.value === '' ? '' : Math.max(0, Math.floor(Number(e.target.value))) }))}
+                      />
+                    </div>
+                  ))}
+                  <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
+                    <button className="primary-btn" disabled={quotaBusy} onClick={saveQuotas}>{quotaBusy ? 'Saving…' : 'Save quotas'}</button>
+                  </div>
+                </div>
+              )}
             </MWSection>
           ) : null}
 
