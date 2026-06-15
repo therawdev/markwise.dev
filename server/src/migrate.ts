@@ -256,6 +256,42 @@ async function migrate() {
     await db.schema.alterTable('memberships', (t) => { t.integer('ai_credit_limit'); });
   }
 
+  // SSO: JIT-provisioned users have no password, so password_hash must be nullable.
+  // (Postgres ALTER ... DROP NOT NULL is idempotent in practice; guard via info schema.)
+  const pwCol = await db('information_schema.columns')
+    .where({ table_name: 'users', column_name: 'password_hash' })
+    .first('is_nullable');
+  if (pwCol && pwCol.is_nullable === 'NO') {
+    await db.schema.alterTable('users', (t) => { t.string('password_hash').nullable().alter(); });
+  }
+
+  // Per-company OIDC single sign-on. client_secret is AES-256-GCM encrypted
+  // (secrets.ts). allowed_domains lets the login page route a matching email to
+  // this company's IdP. default_role_id is the role JIT-provisioned members get.
+  // enforced (future) will disable password login for matching domains.
+  if (!(await has('sso_connections'))) {
+    await db.schema.createTable('sso_connections', (t) => {
+      t.increments('id');
+      t.integer('company_id').notNullable().unique().references('companies.id').onDelete('CASCADE');
+      t.string('type').notNullable().defaultTo('oidc'); // oidc (saml later)
+      t.string('issuer').notNullable();        // e.g. https://accounts.google.com
+      t.string('client_id').notNullable();
+      t.text('client_secret_enc');             // encrypted; null for public/PKCE-only clients
+      t.jsonb('allowed_domains').notNullable().defaultTo('[]'); // lowercased email domains
+      t.integer('default_role_id').references('roles.id').onDelete('SET NULL');
+      t.boolean('enabled').notNullable().defaultTo(false);
+      t.boolean('enforced').notNullable().defaultTo(false);
+      t.timestamp('created_at').defaultTo(db.fn.now());
+      t.timestamp('updated_at').defaultTo(db.fn.now());
+    });
+  }
+
+  // How a user account was created / can authenticate. 'password' (default) or
+  // 'sso'. Used to tailor the login error when an SSO-only user tries a password.
+  if (!(await db.schema.hasColumn('users', 'auth_provider'))) {
+    await db.schema.alterTable('users', (t) => { t.string('auth_provider').notNullable().defaultTo('password'); });
+  }
+
   // Backfill: every role that can edit documents should also be able to comment,
   // and the immutable Owner role gets the full (now-larger) permission set.
   const roles = await db('roles').select('id', 'name', 'is_system', 'permissions');

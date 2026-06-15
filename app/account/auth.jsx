@@ -18,7 +18,9 @@
     const { navigate } = ctx;
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [error, setError] = useState(null);
+    // Surface ?sso_error from a failed/cancelled single sign-on round-trip.
+    const [error, setError] = useState(() => new URLSearchParams(location.search).get('sso_error') || null);
+    const [ssoBusy, setSsoBusy] = useState(false);
     const nextOf = () => new URLSearchParams(location.search).get('next');
 
     const submit = async (e) => {
@@ -30,6 +32,20 @@
         if (next && next.startsWith('/')) location.href = next; else navigate('/docs');
       } catch (err) { setError(err.message); }
     };
+
+    // Single sign-on: look up the email's domain; if an org has SSO, hand off to it.
+    const ssoSignIn = async () => {
+      const e = email.trim();
+      if (!e || e.indexOf('@') === -1) { setError('Enter your work email, then choose single sign-on.'); return; }
+      setSsoBusy(true);
+      try {
+        const r = await API.get('/api/sso/providers?email=' + encodeURIComponent(e));
+        if (!r.available) { setError('No single sign-on is set up for that email’s domain.'); setSsoBusy(false); return; }
+        const next = nextOf();
+        location.href = r.start_url + (next ? '&next=' + encodeURIComponent(next) : '');
+      } catch (err) { setError(err.message); setSsoBusy(false); }
+    };
+
     return (
       <MWAuthShell label="Login">
         <div className="auth-card">
@@ -45,6 +61,10 @@
             {error ? <div className="form-error">{error}</div> : null}
             <button className="primary-btn auth-submit" type="submit">Sign in</button>
           </form>
+          <div className="auth-or"><span>or</span></div>
+          <button className="secondary-btn auth-submit" type="button" disabled={ssoBusy} onClick={ssoSignIn}>
+            {ssoBusy ? 'Redirecting…' : 'Single sign-on (SSO)'}
+          </button>
           <div className="auth-alt">No account? <a href="/signup">Create one</a></div>
         </div>
       </MWAuthShell>

@@ -274,6 +274,7 @@
     if (canBilling)  tabDefs.push({ id: 'billing',  label: 'Billing' });
     tabDefs.push(    { id: 'usage',    label: 'AI usage' });
     if (canSettings) tabDefs.push({ id: 'ai-keys',  label: 'AI keys' });
+    if (canSettings) tabDefs.push({ id: 'sso',       label: 'Single sign-on' });
     tabDefs.push(    { id: 'activity', label: 'Activity' });
     if (canSettings) tabDefs.push({ id: 'settings', label: 'Settings' });
 
@@ -554,6 +555,11 @@
           {/* ===== AI KEYS TAB (bring-your-own provider keys) ===== */}
           {tab === 'ai-keys' && canSettings ? (
             <MWOrgProvidersTab companyId={companyId} toast={toast} />
+          ) : null}
+
+          {/* ===== SINGLE SIGN-ON TAB ===== */}
+          {tab === 'sso' && canSettings ? (
+            <MWOrgSsoTab companyId={companyId} roles={roles} toast={toast} />
           ) : null}
 
           {/* ===== ACTIVITY TAB ===== */}
@@ -919,5 +925,130 @@
     );
   }
 
-  Object.assign(window, { MWOrgPage, MWRoleMatrix, MWOrgProvidersTab, MWOrgCredits });
+  // ===== SINGLE SIGN-ON TAB — per-company OIDC config =====
+  function MWOrgSsoTab({ companyId, roles, toast }) {
+    const API = window.MarkwiseAPI;
+    const [data, setData] = useState(null);  // { secretsConfigured, callback_url, connection|null }
+    const [form, setForm] = useState(null);  // editable draft
+    const [secret, setSecret] = useState(''); // new secret (write-only)
+    const [busy, setBusy] = useState(false);
+    const [test, setTest] = useState(null);
+
+    const hydrate = (d) => {
+      const c = d.connection;
+      setForm({
+        issuer: c?.issuer || '',
+        client_id: c?.client_id || '',
+        allowed_domains: (c?.allowed_domains || []).join(', '),
+        default_role_id: c?.default_role_id || '',
+        enabled: c?.enabled || false,
+      });
+      setSecret('');
+    };
+    const load = () => API.get('/api/orgs/' + companyId + '/sso').then((d) => { setData(d); hydrate(d); }).catch((e) => toast(e.message));
+    useEffect(() => { load(); }, [companyId]);
+
+    const conn = data && data.connection;
+    const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+    const runTest = async () => {
+      setBusy(true); setTest(null);
+      try {
+        const r = await API.post('/api/orgs/' + companyId + '/sso/test', { issuer: (form.issuer || '').trim() });
+        setTest(r);
+      } catch (e) { setTest({ ok: false, reason: e.message }); } finally { setBusy(false); }
+    };
+
+    const save = async (overrides) => {
+      const payload = {
+        issuer: (form.issuer || '').trim(),
+        client_id: (form.client_id || '').trim(),
+        allowed_domains: (form.allowed_domains || '').split(/[\s,]+/).map((s) => s.trim()).filter(Boolean),
+        default_role_id: form.default_role_id ? Number(form.default_role_id) : null,
+        enabled: form.enabled,
+        ...overrides,
+      };
+      if (secret) payload.client_secret = secret;
+      if (!payload.issuer || !payload.client_id) { toast('Issuer URL and client ID are required'); return; }
+      setBusy(true);
+      try {
+        await API.put('/api/orgs/' + companyId + '/sso', payload);
+        toast('Single sign-on saved');
+        await load();
+      } catch (e) { toast(e.message); } finally { setBusy(false); }
+    };
+
+    const remove = async () => {
+      setBusy(true);
+      try { await API.del('/api/orgs/' + companyId + '/sso'); toast('Single sign-on removed'); await load(); }
+      catch (e) { toast(e.message); } finally { setBusy(false); }
+    };
+
+    if (!data || !form) return <MWSection title="Single sign-on"><div className="card empty-note">Loading…</div></MWSection>;
+
+    return (
+      <MWSection
+        title="Single sign-on (OIDC)"
+        sub="Let members sign in with your identity provider (Google Workspace, Microsoft Entra, Okta, or any OIDC provider). New users are provisioned on first login and added to this company."
+      >
+        {!data.secretsConfigured ? (
+          <div className="card empty-note">Secret storage isn’t configured on the server yet — ask the platform admin to set it up before adding a client secret.</div>
+        ) : null}
+
+        <div className="card pad" style={{ marginBottom: 10 }}>
+          <label className="fld-label">Redirect / callback URL — register this at your identity provider</label>
+          <div className="inline-form">
+            <input className="fld" style={{ flex: 1 }} readOnly value={data.callback_url} onFocus={(e) => e.target.select()} />
+            <button className="ghost-btn" onClick={() => mwCopy(data.callback_url, toast, 'Callback URL copied')}>Copy</button>
+          </div>
+        </div>
+
+        <div className="card pad">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <b>OIDC connection</b>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="dim sm-note">{form.enabled ? 'Enabled' : 'Disabled'}</span>
+              <MWSwitch on={form.enabled} onChange={() => { const next = !form.enabled; set('enabled', next); if (conn) save({ enabled: next }); }} />
+            </span>
+          </div>
+
+          <label className="fld-label">Issuer URL</label>
+          <div className="inline-form">
+            <input className="fld" style={{ flex: 1 }} placeholder="https://accounts.google.com" value={form.issuer}
+              onChange={(e) => set('issuer', e.target.value)} />
+            <button className="ghost-btn" disabled={busy || !form.issuer} onClick={runTest}>{busy ? 'Testing…' : 'Test discovery'}</button>
+          </div>
+          {test ? (
+            <div className="sm-note" style={{ margin: '4px 0 8px', color: test.ok ? '#2f8a4e' : '#b4462f' }}>
+              {test.ok ? '✓ Discovery OK — ' + test.authorization_endpoint : '✗ ' + (test.reason || 'failed')}
+            </div>
+          ) : null}
+
+          <label className="fld-label">Client ID</label>
+          <input className="fld" placeholder="client id from your IdP" value={form.client_id} onChange={(e) => set('client_id', e.target.value)} />
+
+          <label className="fld-label">Client secret {conn && conn.has_secret ? '— set (leave blank to keep)' : ''}</label>
+          <input className="fld" type="password" placeholder={conn && conn.has_secret ? '••••••••' : 'client secret (omit for PKCE-only public clients)'}
+            value={secret} onChange={(e) => setSecret(e.target.value)} disabled={!data.secretsConfigured} />
+
+          <label className="fld-label">Allowed email domains</label>
+          <input className="fld" placeholder="acme.com, acme.io" value={form.allowed_domains} onChange={(e) => set('allowed_domains', e.target.value)} />
+          <div className="dim sm-note" style={{ marginTop: 3 }}>Members with these email domains see “Single sign-on” on the login page.</div>
+
+          <label className="fld-label" style={{ marginTop: 10 }}>Role for new members</label>
+          <select className="fld sel" value={form.default_role_id || ''} onChange={(e) => set('default_role_id', e.target.value)}>
+            <option value="">User (default)</option>
+            {(roles || []).filter((r) => r.name !== 'Owner').map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+
+          <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            {conn ? <MWConfirmDelete label="Remove SSO" onConfirm={remove} /> : <span />}
+            <button className="primary-btn" disabled={busy} onClick={() => save()}>{conn ? 'Save changes' : 'Save connection'}</button>
+          </div>
+        </div>
+      </MWSection>
+    );
+  }
+
+  Object.assign(window, { MWOrgPage, MWRoleMatrix, MWOrgProvidersTab, MWOrgCredits, MWOrgSsoTab });
 })();

@@ -66,6 +66,10 @@ authRouter.post('/login', authLimiter, async (req, res) => {
   const { email, password } = parsed.data;
 
   const user = await db('users').whereRaw('lower(email) = ?', email.toLowerCase()).first();
+  // SSO-provisioned accounts have no password — point them at single sign-on.
+  if (user && !user.password_hash) {
+    return res.status(403).json({ error: 'This account uses single sign-on — use your organization’s SSO to sign in' });
+  }
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return res.status(401).json({ error: 'Wrong email or password' });
   }

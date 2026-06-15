@@ -10,6 +10,7 @@ import { aiRouter } from './routes/ai.js';
 import { adminRouter } from './routes/admin.js';
 import { getSetting } from './db.js';
 import { sharedRouter } from './routes/shared.js';
+import { ssoRouter } from './routes/sso.js';
 
 const app = express();
 // Behind a reverse proxy (Render, etc.) the client IP arrives in X-Forwarded-For;
@@ -32,6 +33,7 @@ app.use('/api/docs', docsRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/shared', sharedRouter);
+app.use('/api/sso', ssoRouter);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
