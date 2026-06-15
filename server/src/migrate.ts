@@ -292,6 +292,28 @@ async function migrate() {
     await db.schema.alterTable('users', (t) => { t.string('auth_provider').notNullable().defaultTo('password'); });
   }
 
+  // App-owner gate: a company can only use SSO once the platform admin allows it.
+  if (!(await db.schema.hasColumn('companies', 'sso_allowed'))) {
+    await db.schema.alterTable('companies', (t) => { t.boolean('sso_allowed').notNullable().defaultTo(false); });
+  }
+
+  // Org owners can require all password members to use 2FA.
+  if (!(await db.schema.hasColumn('companies', 'mfa_required'))) {
+    await db.schema.alterTable('companies', (t) => { t.boolean('mfa_required').notNullable().defaultTo(false); });
+  }
+
+  // TOTP multi-factor auth for password accounts (SSO accounts defer to the IdP).
+  // Secret + recovery codes are AES-256-GCM encrypted (secrets.ts).
+  if (!(await db.schema.hasColumn('users', 'mfa_enabled'))) {
+    await db.schema.alterTable('users', (t) => { t.boolean('mfa_enabled').notNullable().defaultTo(false); });
+  }
+  if (!(await db.schema.hasColumn('users', 'mfa_secret_enc'))) {
+    await db.schema.alterTable('users', (t) => { t.text('mfa_secret_enc'); });
+  }
+  if (!(await db.schema.hasColumn('users', 'mfa_recovery_enc'))) {
+    await db.schema.alterTable('users', (t) => { t.text('mfa_recovery_enc'); });
+  }
+
   // Backfill: every role that can edit documents should also be able to comment,
   // and the immutable Owner role gets the full (now-larger) permission set.
   const roles = await db('roles').select('id', 'name', 'is_system', 'permissions');

@@ -122,8 +122,10 @@ orgsRouter.get('/:id/sso', async (req, res) => {
     return res.status(403).json({ error: 'You need the company settings permission' });
   }
   const conn = await getConnectionByCompany(companyId);
+  const company = await db('companies').where({ id: companyId }).first();
   res.json({
     secretsConfigured: secretsConfigured(),
+    sso_allowed: !!company?.sso_allowed, // platform-admin gate
     callback_url: ssoCallbackUrl(req), // register this at the IdP
     connection: conn ? {
       type: conn.type, issuer: conn.issuer, client_id: conn.client_id,
@@ -153,6 +155,11 @@ orgsRouter.put('/:id/sso', async (req, res) => {
   const d = parsed.data;
   if (d.client_secret && !secretsConfigured()) {
     return res.status(400).json({ error: 'Key storage is not configured on the server — contact the platform admin' });
+  }
+  // The org can only switch SSO on once the platform admin has allowed it.
+  if (d.enabled) {
+    const company = await db('companies').where({ id: companyId }).first();
+    if (!company?.sso_allowed) return res.status(403).json({ error: 'Single sign-on must be enabled for your organization by the platform admin first' });
   }
   // A custom default role must belong to this company.
   if (d.default_role_id != null) {
@@ -206,6 +213,18 @@ orgsRouter.post('/:id/sso/test', async (req, res) => {
   } catch (e) {
     res.json({ ok: false, reason: e instanceof Error ? e.message : 'Discovery failed' });
   }
+});
+
+// ---- org security: require 2FA for password members (org:settings) ----
+orgsRouter.put('/:id/security', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await canManageProviders(req, companyId))) {
+    return res.status(403).json({ error: 'You need the company settings permission' });
+  }
+  const mfaRequired = req.body?.mfa_required === true;
+  await db('companies').where({ id: companyId }).update({ mfa_required: mfaRequired });
+  await audit(req.user!.id, 'company.security', `company:${companyId}`, { mfa_required: mfaRequired });
+  res.json({ ok: true, mfa_required: mfaRequired });
 });
 
 // ---- create a company; creator becomes Owner with system roles seeded ----

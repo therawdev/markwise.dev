@@ -30,3 +30,18 @@ export function setAuthCookie(res: Response, userId: number, impersonatedBy?: nu
 export function clearAuthCookie(res: Response) {
   res.clearCookie(COOKIE);
 }
+
+// ---- short-lived MFA challenge token (between password step and 2FA step) ----
+// purpose 'mfa' = enrolled user owes a code; 'mfa_setup' = org requires 2FA and
+// the user must enrol now. Not a session: only the /api/auth/mfa/* steps accept it.
+export function signMfaToken(userId: number, purpose: 'mfa' | 'mfa_setup'): string {
+  return jwt.sign({ uid: userId, mfa: purpose }, SECRET, { expiresIn: '10m' });
+}
+export function verifyMfaToken(token: string, purpose: 'mfa' | 'mfa_setup'): number | null {
+  try {
+    const p = jwt.verify(token, SECRET) as { uid?: number; mfa?: string };
+    return p && p.uid && p.mfa === purpose ? p.uid : null;
+  } catch {
+    return null;
+  }
+}

@@ -265,6 +265,9 @@
                       </form>
                     </div>
                   </MWSection>
+                  <MWSection title="Two-factor authentication" sub="Add a one-time code from an authenticator app to your sign-in.">
+                    <MWMfaCard toast={toast} />
+                  </MWSection>
                   <MWSection title="Active session">
                     <div className="card pad">
                       <p style={{ margin: 0, fontSize: 13, color: 'var(--grey)' }}>You&rsquo;re signed in on this device.</p>
@@ -388,5 +391,98 @@
     );
   }
 
-  Object.assign(window, { MWSettingsPage, MWPwMeter, mwPwScore });
+  // ── two-factor (TOTP) card ──────────────────────────────────────────────────
+  function MWMfaCard({ toast }) {
+    const API = window.MarkwiseAPI;
+    const [st, setSt] = useState(null);      // { enabled, required, secretsConfigured, is_sso }
+    const [setup, setSetup] = useState(null); // { secret, qr_svg }
+    const [code, setCode] = useState('');
+    const [recovery, setRecovery] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState(null);
+
+    const load = () => API.get('/api/auth/mfa').then(setSt).catch(() => {});
+    useEffect(() => { load(); }, []);
+
+    if (!st) return <div className="card pad"><div className="empty-note">Loading…</div></div>;
+    if (st.is_sso) return <div className="card pad"><p className="dim" style={{ margin: 0, fontSize: 13 }}>Your account signs in with single sign-on — two-factor is managed by your identity provider.</p></div>;
+
+    const begin = async () => {
+      setBusy(true); setErr(null);
+      try { setSetup(await API.post('/api/auth/mfa/setup', {})); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    };
+    const enable = async () => {
+      setBusy(true); setErr(null);
+      try {
+        const r = await API.post('/api/auth/mfa/enable', { code: code.trim() });
+        setRecovery(r.recovery_codes || []); setSetup(null); setCode(''); await load(); toast('Two-factor enabled');
+      } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    };
+    const disable = async () => {
+      setBusy(true); setErr(null);
+      try { await API.post('/api/auth/mfa/disable', { code: code.trim() }); setCode(''); setRecovery(null); await load(); toast('Two-factor disabled'); }
+      catch (e) { setErr(e.message); } finally { setBusy(false); }
+    };
+
+    // Freshly enabled — show recovery codes once.
+    if (recovery) {
+      return (
+        <div className="card pad">
+          <b>Save your recovery codes</b>
+          <p className="dim" style={{ fontSize: 13, margin: '4px 0 8px' }}>Each can be used once if you lose your authenticator.</p>
+          <div className="mfa-codes">{recovery.map((c) => <code key={c}>{c}</code>)}</div>
+          <button className="secondary-btn" onClick={() => setRecovery(null)}>Done</button>
+        </div>
+      );
+    }
+
+    if (st.enabled) {
+      return (
+        <div className="card pad">
+          <div className="set-row" style={{ borderBottom: 'none' }}>
+            <div><b>Two-factor is on</b><p>{st.required ? 'Required by your organization — it can’t be turned off.' : 'Your account is protected with an authenticator app.'}</p></div>
+            <MWPill tone="green">Enabled</MWPill>
+          </div>
+          {!st.required ? (
+            <div className="inline-form" style={{ marginTop: 8 }}>
+              <input className="fld" placeholder="Current code to turn off" value={code} onChange={(e) => { setCode(e.target.value); setErr(null); }} />
+              <button className="danger-btn" disabled={busy || !code} onClick={disable}>Turn off</button>
+            </div>
+          ) : null}
+          {err ? <div className="form-error">{err}</div> : null}
+        </div>
+      );
+    }
+
+    // Not enabled
+    if (!setup) {
+      return (
+        <div className="card pad">
+          <div className="set-row" style={{ borderBottom: 'none' }}>
+            <div><b>Two-factor is off</b><p>{st.required ? 'Your organization requires it — set it up now.' : 'Protect your account with an authenticator app.'}</p></div>
+            <button className="primary-btn" disabled={busy || !st.secretsConfigured} onClick={begin}>Set up</button>
+          </div>
+          {!st.secretsConfigured ? <p className="dim" style={{ fontSize: 12, margin: '6px 0 0' }}>Server secret storage isn’t configured — ask the platform admin.</p> : null}
+          {err ? <div className="form-error">{err}</div> : null}
+        </div>
+      );
+    }
+
+    // Mid-setup: QR + confirm code
+    return (
+      <div className="card pad">
+        <p className="dim" style={{ fontSize: 13, marginTop: 0 }}>Scan with an authenticator app (Google Authenticator, 1Password, Authy…), then enter a code.</p>
+        <div className="mfa-qr" dangerouslySetInnerHTML={{ __html: setup.qr_svg }} />
+        <div className="mfa-secret">Or enter this key: <code>{setup.secret}</code></div>
+        <div className="inline-form">
+          <input className="fld" autoFocus placeholder="123456" value={code} onChange={(e) => { setCode(e.target.value); setErr(null); }} />
+          <button className="primary-btn" disabled={busy || !code} onClick={enable}>Verify &amp; enable</button>
+          <button className="ghost-btn" disabled={busy} onClick={() => { setSetup(null); setCode(''); setErr(null); }}>Cancel</button>
+        </div>
+        {err ? <div className="form-error">{err}</div> : null}
+      </div>
+    );
+  }
+
+  Object.assign(window, { MWSettingsPage, MWPwMeter, mwPwScore, MWMfaCard });
 })();

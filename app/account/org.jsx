@@ -384,6 +384,15 @@
     };
 
     // ---- settings ----
+    const toggleMfaRequired = async () => {
+      const next = !org.mfa_required;
+      try {
+        await API.put('/api/orgs/' + companyId + '/security', { mfa_required: next });
+        setOrg((o) => ({ ...o, mfa_required: next }));
+        toast(next ? 'Two-factor is now required for members' : 'Two-factor requirement removed');
+      } catch (e) { toast(e.message); }
+    };
+
     const saveOrgName = async () => {
       const nm = coName.trim();
       if (!nm || nm === org.name) return;
@@ -569,6 +578,18 @@
 
           {/* ===== SETTINGS TAB ===== */}
           {tab === 'settings' && canSettings ? (
+            <React.Fragment>
+            <MWSection title="Security" sub="Applies to members who sign in with a password (SSO members get 2FA from their identity provider).">
+              <div className="card pad">
+                <div className="set-row" style={{ borderBottom: 'none' }}>
+                  <div>
+                    <b>Require two-factor authentication</b>
+                    <p>Members must set up an authenticator app before they can use Markwise.</p>
+                  </div>
+                  <MWSwitch on={!!org.mfa_required} onChange={toggleMfaRequired} />
+                </div>
+              </div>
+            </MWSection>
             <MWSection title="Company settings">
               <div className="card pad">
                 <label className="fld-label">Company name</label>
@@ -587,6 +608,7 @@
                 </div>
               </div>
             </MWSection>
+            </React.Fragment>
           ) : null}
         </main>
       </div>
@@ -991,7 +1013,10 @@
         title="Single sign-on (OIDC)"
         sub="Let members sign in with your identity provider (Google Workspace, Microsoft Entra, Okta, or any OIDC provider). New users are provisioned on first login and added to this company."
       >
-        {!data.secretsConfigured ? (
+        {!data.sso_allowed ? (
+          <div className="card empty-note">Single sign-on isn’t enabled for your organization yet. Ask the Markwise platform admin to turn it on, then you can configure and enable it here.</div>
+        ) : null}
+        {data.sso_allowed && !data.secretsConfigured ? (
           <div className="card empty-note">Secret storage isn’t configured on the server yet — ask the platform admin to set it up before adding a client secret.</div>
         ) : null}
 
@@ -1008,7 +1033,8 @@
             <b>OIDC connection</b>
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span className="dim sm-note">{form.enabled ? 'Enabled' : 'Disabled'}</span>
-              <MWSwitch on={form.enabled} onChange={() => { const next = !form.enabled; set('enabled', next); if (conn) save({ enabled: next }); }} />
+              <MWSwitch on={form.enabled} disabled={!data.sso_allowed}
+                onChange={() => { const next = !form.enabled; set('enabled', next); if (conn) save({ enabled: next }); }} />
             </span>
           </div>
 

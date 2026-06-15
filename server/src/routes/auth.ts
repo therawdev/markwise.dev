@@ -2,12 +2,33 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
+import QRCode from 'qrcode';
 import { db, audit, getSetting } from '../db.js';
-import { setAuthCookie, clearAuthCookie } from '../auth.js';
+import {
+  setAuthCookie, clearAuthCookie, COOKIE, verifyToken, signMfaToken, verifyMfaToken,
+} from '../auth.js';
 import { requireAuth, permissionsFor } from '../middleware.js';
 import { authLimiter } from '../rate-limit.js';
+import { secretsConfigured, encryptSecret, decryptSecret } from '../secrets.js';
+import { generateSecret, verifyTotp, otpauthUri, generateRecoveryCodes, hashRecoveryCodes, consumeRecoveryCode } from '../totp.js';
 
 export const authRouter = Router();
+
+/** True when any of the user's companies requires 2FA for password members. */
+async function mfaRequiredByOrg(userId: number): Promise<boolean> {
+  const row = await db('memberships')
+    .join('companies', 'companies.id', 'memberships.company_id')
+    .where('memberships.user_id', userId)
+    .where('companies.mfa_required', true)
+    .first();
+  return !!row;
+}
+
+/** Finish a successful login: set the session cookie and return the user payload. */
+function loginOk(res: import('express').Response, user: any) {
+  setAuthCookie(res, user.id);
+  res.json({ id: user.id, email: user.email, name: user.name, is_app_owner: user.is_app_owner });
+}
 
 const credsSchema = z.object({
   email: z.string().email().max(200),
@@ -75,8 +96,16 @@ authRouter.post('/login', authLimiter, async (req, res) => {
   }
   if (user.status !== 'active') return res.status(403).json({ error: 'Account suspended' });
 
-  setAuthCookie(res, user.id);
-  res.json({ id: user.id, email: user.email, name: user.name, is_app_owner: user.is_app_owner });
+  // Second factor: enrolled users owe a code; if an org requires 2FA and the user
+  // hasn't set it up, force enrolment before the session is issued.
+  if (user.mfa_enabled) {
+    return res.json({ mfa_required: true, mfa_token: signMfaToken(user.id, 'mfa') });
+  }
+  if (await mfaRequiredByOrg(user.id)) {
+    return res.json({ mfa_setup_required: true, mfa_token: signMfaToken(user.id, 'mfa_setup') });
+  }
+
+  loginOk(res, user);
 });
 
 authRouter.post('/logout', (_req, res) => {
@@ -210,6 +239,111 @@ authRouter.put('/password', requireAuth, async (req, res) => {
 
   await db('users').where({ id: me.id }).update({ password_hash: await bcrypt.hash(password, 10) });
   await audit(me.id, 'user.password', `user:${me.id}`);
+  res.json({ ok: true });
+});
+
+// ---- MFA (TOTP) ----
+// Resolve the acting user from either a live session or a one-time 'mfa_setup'
+// token (used when an org forces enrolment mid-login, before a session exists).
+async function mfaActor(req: import('express').Request): Promise<{ user: any; viaSetup: boolean } | null> {
+  const tok = req.cookies?.[COOKIE];
+  const payload = tok ? verifyToken(tok) : null;
+  if (payload) {
+    const u = await db('users').where({ id: payload.uid }).first();
+    if (u && u.status === 'active') return { user: u, viaSetup: false };
+  }
+  const setupTok = typeof req.body?.mfa_token === 'string' ? req.body.mfa_token : null;
+  if (setupTok) {
+    const uid = verifyMfaToken(setupTok, 'mfa_setup');
+    if (uid) {
+      const u = await db('users').where({ id: uid }).first();
+      if (u && u.status === 'active') return { user: u, viaSetup: true };
+    }
+  }
+  return null;
+}
+
+// Status for the settings UI.
+authRouter.get('/mfa', requireAuth, async (req, res) => {
+  const u = await db('users').where({ id: req.user!.id }).first();
+  res.json({
+    enabled: !!u.mfa_enabled,
+    required: await mfaRequiredByOrg(req.user!.id), // org enforces it → can't disable
+    secretsConfigured: secretsConfigured(),
+    is_sso: !u.password_hash,
+  });
+});
+
+// Begin enrolment: issue a fresh secret + QR. Not active until verified.
+authRouter.post('/mfa/setup', async (req, res) => {
+  if (!secretsConfigured()) return res.status(400).json({ error: 'Server secret storage is not configured' });
+  const actor = await mfaActor(req);
+  if (!actor) return res.status(401).json({ error: 'Not signed in' });
+  if (actor.user.mfa_enabled) return res.status(400).json({ error: 'Two-factor is already enabled' });
+
+  const secret = generateSecret();
+  await db('users').where({ id: actor.user.id }).update({ mfa_secret_enc: encryptSecret(secret) });
+  const uri = otpauthUri(secret, actor.user.email);
+  const qr_svg = await QRCode.toString(uri, { type: 'svg', margin: 1, width: 200 });
+  res.json({ secret, otpauth_uri: uri, qr_svg });
+});
+
+// Verify the first code and turn 2FA on; returns one-time recovery codes.
+authRouter.post('/mfa/enable', async (req, res) => {
+  const actor = await mfaActor(req);
+  if (!actor) return res.status(401).json({ error: 'Not signed in' });
+  const user = actor.user;
+  if (user.mfa_enabled) return res.status(400).json({ error: 'Two-factor is already enabled' });
+  if (!user.mfa_secret_enc) return res.status(400).json({ error: 'Start setup first' });
+
+  let secret: string;
+  try { secret = decryptSecret(user.mfa_secret_enc); } catch { return res.status(400).json({ error: 'Setup expired — start again' }); }
+  if (!verifyTotp(secret, String(req.body?.code || ''))) return res.status(400).json({ error: 'That code is not valid — check your authenticator and try again' });
+
+  const recovery = generateRecoveryCodes();
+  await db('users').where({ id: user.id }).update({
+    mfa_enabled: true,
+    mfa_recovery_enc: encryptSecret(JSON.stringify(hashRecoveryCodes(recovery))),
+  });
+  await audit(user.id, 'user.mfa_enable', `user:${user.id}`);
+  // If this completed a forced mid-login enrolment, issue the session now.
+  if (actor.viaSetup) setAuthCookie(res, user.id);
+  res.json({ ok: true, recovery_codes: recovery });
+});
+
+// Second-factor step at login: exchange the 'mfa' token + code for a session.
+authRouter.post('/mfa/verify', authLimiter, async (req, res) => {
+  const uid = verifyMfaToken(String(req.body?.mfa_token || ''), 'mfa');
+  if (!uid) return res.status(401).json({ error: 'Your sign-in attempt expired — start again' });
+  const user = await db('users').where({ id: uid }).first();
+  if (!user || !user.mfa_enabled || user.status !== 'active') return res.status(401).json({ error: 'Sign in again' });
+
+  const code = String(req.body?.code || '').trim();
+  let ok = false;
+  try {
+    if (user.mfa_secret_enc && verifyTotp(decryptSecret(user.mfa_secret_enc), code)) ok = true;
+  } catch { /* fall through */ }
+  // Recovery code fallback (single use).
+  if (!ok && user.mfa_recovery_enc) {
+    try {
+      const remaining = consumeRecoveryCode(code, JSON.parse(decryptSecret(user.mfa_recovery_enc)));
+      if (remaining) { ok = true; await db('users').where({ id: user.id }).update({ mfa_recovery_enc: encryptSecret(JSON.stringify(remaining)) }); await audit(user.id, 'user.mfa_recovery_used', `user:${user.id}`); }
+    } catch { /* ignore */ }
+  }
+  if (!ok) return res.status(400).json({ error: 'That code is not valid' });
+  loginOk(res, user);
+});
+
+// Turn 2FA off — blocked while an org requires it. Re-verify with a current code.
+authRouter.post('/mfa/disable', requireAuth, async (req, res) => {
+  const user = await db('users').where({ id: req.user!.id }).first();
+  if (!user.mfa_enabled) return res.status(400).json({ error: 'Two-factor is not enabled' });
+  if (await mfaRequiredByOrg(user.id)) return res.status(403).json({ error: 'Your organization requires two-factor authentication — it can’t be turned off' });
+  let ok = false;
+  try { ok = !!user.mfa_secret_enc && verifyTotp(decryptSecret(user.mfa_secret_enc), String(req.body?.code || '')); } catch { /* */ }
+  if (!ok) return res.status(400).json({ error: 'Enter a current authenticator code to turn off two-factor' });
+  await db('users').where({ id: user.id }).update({ mfa_enabled: false, mfa_secret_enc: null, mfa_recovery_enc: null });
+  await audit(user.id, 'user.mfa_disable', `user:${user.id}`);
   res.json({ ok: true });
 });
 

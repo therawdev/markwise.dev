@@ -38,11 +38,23 @@ export async function getConnectionByCompany(companyId: number): Promise<SsoConn
   return row ? normalize(row) : null;
 }
 
-/** First enabled connection whose allowed_domains contains the email's domain. */
+/** True when the platform admin has allowed SSO for this company. */
+export async function companySsoAllowed(companyId: number): Promise<boolean> {
+  const c = await db('companies').where({ id: companyId }).first();
+  return !!c && c.sso_allowed === true;
+}
+
+/**
+ * First connection whose allowed_domains contains the email's domain, restricted
+ * to companies that are both enabled and platform-allowed.
+ */
 export async function getEnabledConnectionForEmail(email: string): Promise<SsoConnection | null> {
   const domain = String(email).toLowerCase().split('@')[1];
   if (!domain) return null;
-  const rows = await db('sso_connections').where({ enabled: true });
+  const rows = await db('sso_connections')
+    .join('companies', 'companies.id', 'sso_connections.company_id')
+    .where({ 'sso_connections.enabled': true, 'companies.sso_allowed': true })
+    .select('sso_connections.*');
   for (const r of rows) {
     const c = normalize(r);
     if (c.allowed_domains.map((d) => String(d).toLowerCase()).includes(domain)) return c;

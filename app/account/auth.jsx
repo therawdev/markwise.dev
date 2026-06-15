@@ -21,15 +21,45 @@
     // Surface ?sso_error from a failed/cancelled single sign-on round-trip.
     const [error, setError] = useState(() => new URLSearchParams(location.search).get('sso_error') || null);
     const [ssoBusy, setSsoBusy] = useState(false);
+    // Second-factor flow: 'creds' → 'mfa' (enrolled) or 'setup' (org-forced enrolment) → 'recovery'.
+    const [stage, setStage] = useState('creds');
+    const [mfaToken, setMfaToken] = useState(null);
+    const [code, setCode] = useState('');
+    const [setupData, setSetupData] = useState(null); // { secret, qr_svg }
+    const [recovery, setRecovery] = useState(null);
     const nextOf = () => new URLSearchParams(location.search).get('next');
+
+    const finish = async () => {
+      await ctx.reload();
+      const next = nextOf();
+      if (next && next.startsWith('/')) location.href = next; else navigate('/docs');
+    };
 
     const submit = async (e) => {
       e.preventDefault();
       try {
-        await API.post('/api/auth/login', { email: email.trim(), password });
-        await ctx.reload();
-        const next = nextOf();
-        if (next && next.startsWith('/')) location.href = next; else navigate('/docs');
+        const r = await API.post('/api/auth/login', { email: email.trim(), password });
+        if (r && r.mfa_required) { setMfaToken(r.mfa_token); setStage('mfa'); setError(null); return; }
+        if (r && r.mfa_setup_required) {
+          setMfaToken(r.mfa_token);
+          const s = await API.post('/api/auth/mfa/setup', { mfa_token: r.mfa_token });
+          setSetupData(s); setStage('setup'); setError(null); return;
+        }
+        await finish();
+      } catch (err) { setError(err.message); }
+    };
+
+    const verifyMfa = async (e) => {
+      e.preventDefault();
+      try { await API.post('/api/auth/mfa/verify', { mfa_token: mfaToken, code: code.trim() }); await finish(); }
+      catch (err) { setError(err.message); }
+    };
+
+    const enableMfa = async (e) => {
+      e.preventDefault();
+      try {
+        const r = await API.post('/api/auth/mfa/enable', { mfa_token: mfaToken, code: code.trim() });
+        setRecovery(r.recovery_codes || []); setStage('recovery'); setError(null);
       } catch (err) { setError(err.message); }
     };
 
@@ -45,6 +75,61 @@
         location.href = r.start_url + (next ? '&next=' + encodeURIComponent(next) : '');
       } catch (err) { setError(err.message); setSsoBusy(false); }
     };
+
+    // ---- second-factor: enter a code ----
+    if (stage === 'mfa') {
+      return (
+        <MWAuthShell label="Two-factor">
+          <div className="auth-card">
+            <h1 className="auth-title">Two-factor authentication</h1>
+            <p className="auth-sub">Enter the 6-digit code from your authenticator app, or a recovery code.</p>
+            <form onSubmit={verifyMfa}>
+              <label className="fld-label">Authentication code</label>
+              <input className="fld" autoFocus inputMode="text" placeholder="123456" value={code}
+                onChange={(e) => { setCode(e.target.value); setError(null); }} />
+              {error ? <div className="form-error">{error}</div> : null}
+              <button className="primary-btn auth-submit" type="submit">Verify</button>
+            </form>
+            <div className="auth-alt"><a href="#" onClick={(e) => { e.preventDefault(); setStage('creds'); setCode(''); setError(null); }}>Back to sign in</a></div>
+          </div>
+        </MWAuthShell>
+      );
+    }
+
+    // ---- org-forced enrolment: scan QR, confirm a code ----
+    if (stage === 'setup') {
+      return (
+        <MWAuthShell label="Set up two-factor">
+          <div className="auth-card">
+            <h1 className="auth-title">Set up two-factor</h1>
+            <p className="auth-sub">Your organization requires two-factor authentication. Scan this with an authenticator app, then enter a code.</p>
+            {setupData ? <div className="mfa-qr" dangerouslySetInnerHTML={{ __html: setupData.qr_svg }} /> : null}
+            {setupData ? <div className="mfa-secret">Or enter this key: <code>{setupData.secret}</code></div> : null}
+            <form onSubmit={enableMfa}>
+              <label className="fld-label">Authentication code</label>
+              <input className="fld" autoFocus placeholder="123456" value={code}
+                onChange={(e) => { setCode(e.target.value); setError(null); }} />
+              {error ? <div className="form-error">{error}</div> : null}
+              <button className="primary-btn auth-submit" type="submit">Turn on &amp; continue</button>
+            </form>
+          </div>
+        </MWAuthShell>
+      );
+    }
+
+    // ---- recovery codes shown once after forced enrolment ----
+    if (stage === 'recovery') {
+      return (
+        <MWAuthShell label="Recovery codes">
+          <div className="auth-card">
+            <h1 className="auth-title">Save your recovery codes</h1>
+            <p className="auth-sub">Store these somewhere safe. Each one can be used once if you lose your authenticator.</p>
+            <div className="mfa-codes">{(recovery || []).map((c) => <code key={c}>{c}</code>)}</div>
+            <button className="primary-btn auth-submit" type="button" onClick={finish}>I’ve saved them — continue</button>
+          </div>
+        </MWAuthShell>
+      );
+    }
 
     return (
       <MWAuthShell label="Login">

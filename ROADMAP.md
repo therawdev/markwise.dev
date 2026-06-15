@@ -78,8 +78,20 @@ cost/quality. Directly covers your asks: keys-in-DB, detailed usage, request/res
 > to register at the IdP. Login start + `/api/sso/callback` JIT-provision the user
 > (or link by email) and enrol them in the company; the login page offers SSO by
 > email domain. Password login is rejected for SSO-only accounts.
-> **Still open in P2:** the `enforced` flag is stored but not yet enforced; MFA,
-> session management, and login lockout are not built; SAML/SCIM remain backlog.
+> **App-owner control:** SSO is gated per company by `companies.sso_allowed` —
+> the platform admin toggles it in the admin **Companies** tab, and only then can
+> the org owner configure and enable it. The public start/callback and the
+> login-page domain lookup all honor that gate.
+>
+> **MFA (TOTP) shipped.** `server/src/totp.ts` (RFC 6238, hand-rolled on node
+> crypto) + recovery codes; secret & codes AES-256-GCM encrypted. Any password
+> user enables 2FA from **Settings → Security** (QR via `qrcode`, verify, recovery
+> codes). Login becomes a two-step flow (`/api/auth/mfa/verify`). **Org-enforced
+> 2FA:** an org owner toggles "require two-factor" (`companies.mfa_required`);
+> members without it are force-enrolled at next login before a session is issued,
+> and can't turn it off while required. SSO accounts defer 2FA to their IdP.
+> **Still open in P2:** SSO-`enforced` (disable passwords for a domain), session
+> management/revocation, login lockout; SAML/SCIM remain backlog.
 
 ---
 

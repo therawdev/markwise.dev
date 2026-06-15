@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { db, audit } from '../db.js';
 import { setAuthCookie } from '../auth.js';
 import {
-  SSO_STATE_COOKIE, getConnectionByCompany, getEnabledConnectionForEmail,
+  SSO_STATE_COOKIE, getConnectionByCompany, getEnabledConnectionForEmail, companySsoAllowed,
   discover, pkcePair, signState, verifyState, buildAuthUrl, exchangeCode, verifyIdToken,
 } from '../sso.js';
 
@@ -41,6 +41,7 @@ ssoRouter.get('/start', async (req, res) => {
     if (req.query.company) conn = await getConnectionByCompany(Number(req.query.company));
     else if (req.query.email) conn = await getEnabledConnectionForEmail(String(req.query.email));
     if (!conn || !conn.enabled) return res.redirect('/login?sso_error=' + encodeURIComponent('Single sign-on is not configured'));
+    if (!(await companySsoAllowed(conn.company_id))) return res.redirect('/login?sso_error=' + encodeURIComponent('Single sign-on is not enabled for this organization'));
 
     const doc = await discover(conn.issuer);
     const { verifier, challenge } = pkcePair();
@@ -68,6 +69,7 @@ ssoRouter.get('/callback', async (req, res) => {
 
     const conn = await getConnectionByCompany(st.companyId);
     if (!conn || !conn.enabled) return fail('Single sign-on is no longer enabled');
+    if (!(await companySsoAllowed(conn.company_id))) return fail('Single sign-on is not enabled for this organization');
 
     const doc = await discover(conn.issuer);
     const idToken = await exchangeCode(doc, conn, code, callbackUrl(req), st.verifier);

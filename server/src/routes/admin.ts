@@ -123,6 +123,18 @@ adminRouter.put('/companies/:id/status', async (req, res) => {
   res.json({ ok: true });
 });
 
+// App-owner gate: allow/disallow single sign-on for a company. The org owner can
+// only configure & enable SSO once this is on.
+adminRouter.put('/companies/:id/sso-allowed', async (req, res) => {
+  const companyId = Number(req.params.id);
+  const allowed = req.body?.allowed === true;
+  const target = await db('companies').where({ id: companyId }).first();
+  if (!target) return res.status(404).json({ error: 'Company not found' });
+  await db('companies').where({ id: companyId }).update({ sso_allowed: allowed });
+  await audit(req.user!.id, 'admin.company_sso', `company:${companyId}`, { allowed, company: target.name });
+  res.json({ ok: true, sso_allowed: allowed });
+});
+
 // ---- AI provider controls ----
 adminRouter.put('/ai-provider', async (req, res) => {
   const id = String(req.body?.provider || '');
