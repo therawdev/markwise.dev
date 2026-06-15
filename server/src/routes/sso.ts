@@ -4,7 +4,7 @@
 import { Router } from 'express';
 import { randomBytes } from 'node:crypto';
 import { db, audit } from '../db.js';
-import { setAuthCookie } from '../auth.js';
+import { createSession } from '../auth.js';
 import {
   SSO_STATE_COOKIE, getConnectionByCompany, getEnabledConnectionForEmail, companySsoAllowed,
   discover, pkcePair, signState, verifyState, buildAuthUrl, exchangeCode, verifyIdToken,
@@ -101,7 +101,7 @@ ssoRouter.get('/callback', async (req, res) => {
       }
     }
 
-    setAuthCookie(res, user.id);
+    await createSession(res, user.id, { userAgent: req.headers['user-agent'] });
     res.redirect(st.next || '/docs');
   } catch (e) {
     fail(e instanceof Error ? e.message : 'Single sign-on failed');

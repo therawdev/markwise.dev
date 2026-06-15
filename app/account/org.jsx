@@ -964,6 +964,7 @@
         allowed_domains: (c?.allowed_domains || []).join(', '),
         default_role_id: c?.default_role_id || '',
         enabled: c?.enabled || false,
+        enforced: c?.enforced || false,
       });
       setSecret('');
     };
@@ -988,6 +989,7 @@
         allowed_domains: (form.allowed_domains || '').split(/[\s,]+/).map((s) => s.trim()).filter(Boolean),
         default_role_id: form.default_role_id ? Number(form.default_role_id) : null,
         enabled: form.enabled,
+        enforced: form.enforced,
         ...overrides,
       };
       if (secret) payload.client_secret = secret;
@@ -1066,6 +1068,14 @@
             <option value="">User (default)</option>
             {(roles || []).filter((r) => r.name !== 'Owner').map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
+
+          <div className="set-row" style={{ marginTop: 12 }}>
+            <div>
+              <b>Require SSO (disable passwords)</b>
+              <p>Members with an allowed domain can only sign in through your identity provider — password login and signup are refused.</p>
+            </div>
+            <MWSwitch on={!!form.enforced} disabled={!data.sso_allowed} onChange={() => { const next = !form.enforced; set('enforced', next); if (conn) save({ enforced: next }); }} />
+          </div>
 
           <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             {conn ? <MWConfirmDelete label="Remove SSO" onConfirm={remove} /> : <span />}

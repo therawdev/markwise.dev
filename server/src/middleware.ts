@@ -17,6 +17,7 @@ declare global {
     interface Request {
       user?: AuthedUser;
       impersonatedBy?: number;
+      sessionId?: string;
     }
   }
 }
@@ -25,11 +26,20 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   const token = req.cookies?.[COOKIE];
   const payload = token ? verifyToken(token) : null;
   if (!payload) return res.status(401).json({ error: 'Not signed in' });
-  const user = await db('users').where({ id: payload.uid }).first();
+  // The session row must still exist — that's how revocation / "sign out
+  // everywhere" take effect even though the JWT itself is still unexpired.
+  const session = await db('sessions').where({ id: payload.sid }).first();
+  if (!session) return res.status(401).json({ error: 'Session expired' });
+  const user = await db('users').where({ id: session.user_id }).first();
   if (!user) return res.status(401).json({ error: 'Not signed in' });
   if (user.status !== 'active') return res.status(403).json({ error: 'Account suspended' });
   req.user = user;
-  if (payload.imp) req.impersonatedBy = payload.imp;
+  req.sessionId = payload.sid;
+  if (session.impersonated_by) req.impersonatedBy = session.impersonated_by;
+  // Throttled last-seen update (best-effort; never blocks the request).
+  if (!session.last_seen || Date.now() - new Date(session.last_seen).getTime() > 60_000) {
+    db('sessions').where({ id: payload.sid }).update({ last_seen: db.fn.now() }).catch(() => {});
+  }
   next();
 }
 

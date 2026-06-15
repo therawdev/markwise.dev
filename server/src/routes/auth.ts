@@ -5,14 +5,19 @@ import { z } from 'zod';
 import QRCode from 'qrcode';
 import { db, audit, getSetting } from '../db.js';
 import {
-  setAuthCookie, clearAuthCookie, COOKIE, verifyToken, signMfaToken, verifyMfaToken,
+  createSession, destroySession, clearAuthCookie, COOKIE, verifyToken, signMfaToken, verifyMfaToken,
 } from '../auth.js';
 import { requireAuth, permissionsFor } from '../middleware.js';
 import { authLimiter } from '../rate-limit.js';
 import { secretsConfigured, encryptSecret, decryptSecret } from '../secrets.js';
 import { generateSecret, verifyTotp, otpauthUri, generateRecoveryCodes, hashRecoveryCodes, consumeRecoveryCode } from '../totp.js';
+import { getEnforcedConnectionForEmail } from '../sso.js';
 
 export const authRouter = Router();
+
+// Consecutive password failures before an account is briefly locked.
+const LOCKOUT_THRESHOLD = 5;
+const LOCKOUT_MINUTES = 15;
 
 /** True when any of the user's companies requires 2FA for password members. */
 async function mfaRequiredByOrg(userId: number): Promise<boolean> {
@@ -24,9 +29,9 @@ async function mfaRequiredByOrg(userId: number): Promise<boolean> {
   return !!row;
 }
 
-/** Finish a successful login: set the session cookie and return the user payload. */
-function loginOk(res: import('express').Response, user: any) {
-  setAuthCookie(res, user.id);
+/** Finish a successful login: start a session and return the user payload. */
+async function loginOk(req: import('express').Request, res: import('express').Response, user: any) {
+  await createSession(res, user.id, { userAgent: req.headers['user-agent'] });
   res.json({ id: user.id, email: user.email, name: user.name, is_app_owner: user.is_app_owner });
 }
 
@@ -56,6 +61,11 @@ authRouter.post('/signup', authLimiter, async (req, res) => {
   const existing = await db('users').whereRaw('lower(email) = ?', email.toLowerCase()).first();
   if (existing) return res.status(409).json({ error: 'An account with this email already exists' });
 
+  // If the email's domain is under an enforced SSO org, no password accounts.
+  if (await getEnforcedConnectionForEmail(email)) {
+    return res.status(403).json({ error: 'Your organization requires single sign-on — use the SSO option to sign in' });
+  }
+
   const [user] = await db('users')
     .insert({
       email: email.toLowerCase(),
@@ -74,7 +84,7 @@ authRouter.post('/signup', authLimiter, async (req, res) => {
     joined = await db('companies').where({ id: invite.company_id }).first();
     await audit(user.id, 'invite.accept', `company:${invite.company_id}`, { invite_id: invite.id, company: joined?.name });
   }
-  setAuthCookie(res, user.id);
+  await createSession(res, user.id, { userAgent: req.headers['user-agent'] });
   res.json({
     id: user.id, email: user.email, name: user.name, is_app_owner: user.is_app_owner,
     joined: joined ? { id: joined.id, name: joined.name } : null,
@@ -86,15 +96,43 @@ authRouter.post('/login', authLimiter, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'Email and password required' });
   const { email, password } = parsed.data;
 
+  // Enforced SSO wins even for accounts that still have a password.
+  if (await getEnforcedConnectionForEmail(email)) {
+    return res.status(403).json({ error: 'Your organization requires single sign-on — use the SSO option to sign in' });
+  }
+
   const user = await db('users').whereRaw('lower(email) = ?', email.toLowerCase()).first();
   // SSO-provisioned accounts have no password — point them at single sign-on.
   if (user && !user.password_hash) {
     return res.status(403).json({ error: 'This account uses single sign-on — use your organization’s SSO to sign in' });
   }
-  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+  // Account lockout after repeated failures.
+  if (user && user.locked_until && new Date(user.locked_until) > new Date()) {
+    const mins = Math.max(1, Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 60000));
+    return res.status(429).json({ error: `Too many failed attempts — try again in ${mins} minute${mins === 1 ? '' : 's'}` });
+  }
+
+  const passwordOk = !!user && !!user.password_hash && (await bcrypt.compare(password, user.password_hash));
+  if (!passwordOk) {
+    if (user) {
+      // Count the failure; lock the account once the threshold is crossed.
+      const fails = (user.failed_logins || 0) + 1;
+      const patch: Record<string, unknown> = { failed_logins: fails };
+      if (fails >= LOCKOUT_THRESHOLD) {
+        patch.failed_logins = 0;
+        patch.locked_until = new Date(Date.now() + LOCKOUT_MINUTES * 60000);
+        await audit(user.id, 'user.locked', `user:${user.id}`, { minutes: LOCKOUT_MINUTES });
+      }
+      await db('users').where({ id: user.id }).update(patch);
+    }
     return res.status(401).json({ error: 'Wrong email or password' });
   }
   if (user.status !== 'active') return res.status(403).json({ error: 'Account suspended' });
+
+  // Successful password → clear any failure/lock counters.
+  if (user.failed_logins || user.locked_until) {
+    await db('users').where({ id: user.id }).update({ failed_logins: 0, locked_until: null });
+  }
 
   // Second factor: enrolled users owe a code; if an org requires 2FA and the user
   // hasn't set it up, force enrolment before the session is issued.
@@ -105,10 +143,14 @@ authRouter.post('/login', authLimiter, async (req, res) => {
     return res.json({ mfa_setup_required: true, mfa_token: signMfaToken(user.id, 'mfa_setup') });
   }
 
-  loginOk(res, user);
+  await loginOk(req, res, user);
 });
 
-authRouter.post('/logout', (_req, res) => {
+authRouter.post('/logout', async (req, res) => {
+  // End the server-side session so the (still-unexpired) cookie can't be reused.
+  const token = req.cookies?.[COOKIE];
+  const payload = token ? verifyToken(token) : null;
+  if (payload) await destroySession(payload.sid);
   clearAuthCookie(res);
   res.json({ ok: true });
 });
@@ -307,7 +349,7 @@ authRouter.post('/mfa/enable', async (req, res) => {
   });
   await audit(user.id, 'user.mfa_enable', `user:${user.id}`);
   // If this completed a forced mid-login enrolment, issue the session now.
-  if (actor.viaSetup) setAuthCookie(res, user.id);
+  if (actor.viaSetup) await createSession(res, user.id, { userAgent: req.headers['user-agent'] });
   res.json({ ok: true, recovery_codes: recovery });
 });
 
@@ -331,7 +373,7 @@ authRouter.post('/mfa/verify', authLimiter, async (req, res) => {
     } catch { /* ignore */ }
   }
   if (!ok) return res.status(400).json({ error: 'That code is not valid' });
-  loginOk(res, user);
+  await loginOk(req, res, user);
 });
 
 // Turn 2FA off — blocked while an org requires it. Re-verify with a current code.
@@ -345,6 +387,36 @@ authRouter.post('/mfa/disable', requireAuth, async (req, res) => {
   await db('users').where({ id: user.id }).update({ mfa_enabled: false, mfa_secret_enc: null, mfa_recovery_enc: null });
   await audit(user.id, 'user.mfa_disable', `user:${user.id}`);
   res.json({ ok: true });
+});
+
+// ---- active sessions: list / revoke one / revoke all others ----
+authRouter.get('/sessions', requireAuth, async (req, res) => {
+  const rows = await db('sessions')
+    .where({ user_id: req.user!.id })
+    .orderBy('last_seen', 'desc')
+    .select('id', 'user_agent', 'impersonated_by', 'created_at', 'last_seen');
+  res.json(rows.map((s) => ({
+    id: s.id,
+    user_agent: s.user_agent || '',
+    impersonated: !!s.impersonated_by,
+    created_at: s.created_at,
+    last_seen: s.last_seen,
+    current: s.id === req.sessionId,
+  })));
+});
+
+authRouter.delete('/sessions/:id', requireAuth, async (req, res) => {
+  const sid = String(req.params.id);
+  const sess = await db('sessions').where({ id: sid, user_id: req.user!.id }).first();
+  if (!sess) return res.status(404).json({ error: 'Session not found' });
+  await db('sessions').where({ id: sid }).delete();
+  res.json({ ok: true, was_current: sid === req.sessionId });
+});
+
+authRouter.post('/sessions/revoke-others', requireAuth, async (req, res) => {
+  const n = await db('sessions').where({ user_id: req.user!.id }).whereNot('id', req.sessionId!).delete();
+  await audit(req.user!.id, 'user.sessions_revoked', `user:${req.user!.id}`, { count: n });
+  res.json({ ok: true, revoked: n });
 });
 
 // ---- delete account ----

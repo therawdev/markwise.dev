@@ -314,6 +314,28 @@ async function migrate() {
     await db.schema.alterTable('users', (t) => { t.text('mfa_recovery_enc'); });
   }
 
+  // Login lockout: consecutive password failures and a cooldown timestamp.
+  if (!(await db.schema.hasColumn('users', 'failed_logins'))) {
+    await db.schema.alterTable('users', (t) => { t.integer('failed_logins').notNullable().defaultTo(0); });
+  }
+  if (!(await db.schema.hasColumn('users', 'locked_until'))) {
+    await db.schema.alterTable('users', (t) => { t.timestamp('locked_until'); });
+  }
+
+  // Server-tracked sessions (so they can be listed and revoked). The auth cookie's
+  // JWT carries the session id (sid); requireAuth checks the row still exists.
+  if (!(await has('sessions'))) {
+    await db.schema.createTable('sessions', (t) => {
+      t.string('id').primary(); // random sid embedded in the JWT
+      t.integer('user_id').notNullable().references('users.id').onDelete('CASCADE');
+      t.integer('impersonated_by').references('users.id').onDelete('CASCADE');
+      t.string('user_agent', 300);
+      t.timestamp('created_at').defaultTo(db.fn.now());
+      t.timestamp('last_seen').defaultTo(db.fn.now());
+      t.index(['user_id']);
+    });
+  }
+
   // Backfill: every role that can edit documents should also be able to comment,
   // and the immutable Owner role gets the full (now-larger) permission set.
   const roles = await db('roles').select('id', 'name', 'is_system', 'permissions');

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db, setSetting, getSetting, audit } from '../db.js';
 import { requireAuth, requireAppOwner } from '../middleware.js';
-import { setAuthCookie } from '../auth.js';
+import { createSession, destroySession } from '../auth.js';
 import { PROVIDERS, providerStatus } from '../providers/index.js';
 import { listProviderConfigs, setProviderConfig } from '../providers/config.js';
 import { secretsConfigured } from '../secrets.js';
@@ -17,7 +17,8 @@ adminRouter.post('/impersonate/stop', async (req, res) => {
   if (!req.impersonatedBy) return res.status(400).json({ error: 'Not impersonating anyone' });
   const owner = await db('users').where({ id: req.impersonatedBy, is_app_owner: true }).first();
   if (!owner) return res.status(400).json({ error: 'Original admin session not found' });
-  setAuthCookie(res, owner.id);
+  if (req.sessionId) await destroySession(req.sessionId); // end the impersonation session
+  await createSession(res, owner.id, { userAgent: req.headers['user-agent'] });
   res.json({ ok: true });
 });
 
@@ -50,7 +51,7 @@ adminRouter.post('/impersonate/:id', async (req, res) => {
   if (!target) return res.status(404).json({ error: 'User not found' });
   if (target.is_app_owner) return res.status(400).json({ error: 'Cannot impersonate the app owner' });
   if (target.status !== 'active') return res.status(400).json({ error: 'User is suspended' });
-  setAuthCookie(res, target.id, req.user!.id);
+  await createSession(res, target.id, { impersonatedBy: req.user!.id, userAgent: req.headers['user-agent'] });
   await audit(req.user!.id, 'admin.impersonate', `user:${target.id}`, { email: target.email });
   res.json({ ok: true });
 });

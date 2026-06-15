@@ -38,6 +38,16 @@ export async function getConnectionByCompany(companyId: number): Promise<SsoConn
   return row ? normalize(row) : null;
 }
 
+/**
+ * An enabled+allowed connection that is ENFORCED for this email's domain, if any.
+ * When present, password login/signup for that email must be refused — the user
+ * has to go through SSO.
+ */
+export async function getEnforcedConnectionForEmail(email: string): Promise<SsoConnection | null> {
+  const c = await getEnabledConnectionForEmail(email);
+  return c && c.enforced ? c : null;
+}
+
 /** True when the platform admin has allowed SSO for this company. */
 export async function companySsoAllowed(companyId: number): Promise<boolean> {
   const c = await db('companies').where({ id: companyId }).first();

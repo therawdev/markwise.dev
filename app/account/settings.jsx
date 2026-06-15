@@ -268,10 +268,8 @@
                   <MWSection title="Two-factor authentication" sub="Add a one-time code from an authenticator app to your sign-in.">
                     <MWMfaCard toast={toast} />
                   </MWSection>
-                  <MWSection title="Active session">
-                    <div className="card pad">
-                      <p style={{ margin: 0, fontSize: 13, color: 'var(--grey)' }}>You&rsquo;re signed in on this device.</p>
-                    </div>
+                  <MWSection title="Active sessions" sub="Devices signed in to your account. Revoke any you don’t recognize.">
+                    <MWSessionsCard toast={toast} />
                   </MWSection>
                 </React.Fragment>
               ) : null}
@@ -484,5 +482,65 @@
     );
   }
 
-  Object.assign(window, { MWSettingsPage, MWPwMeter, mwPwScore, MWMfaCard });
+  // ── active sessions card ────────────────────────────────────────────────────
+  function MWSessionsCard({ toast }) {
+    const API = window.MarkwiseAPI;
+    const [sessions, setSessions] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const load = () => API.get('/api/auth/sessions').then(setSessions).catch(() => setSessions([]));
+    useEffect(() => { load(); }, []);
+
+    // Turn a UA string into a short, friendly label.
+    const label = (ua) => {
+      if (!ua) return 'Unknown device';
+      const browser = /Edg/.test(ua) ? 'Edge' : /Chrome/.test(ua) ? 'Chrome' : /Firefox/.test(ua) ? 'Firefox' : /Safari/.test(ua) ? 'Safari' : 'Browser';
+      const os = /Windows/.test(ua) ? 'Windows' : /Mac OS|Macintosh/.test(ua) ? 'macOS' : /Android/.test(ua) ? 'Android' : /iPhone|iPad|iOS/.test(ua) ? 'iOS' : /Linux/.test(ua) ? 'Linux' : '';
+      return browser + (os ? ' · ' + os : '');
+    };
+    const revoke = async (s) => {
+      setBusy(true);
+      try {
+        const r = await API.del('/api/auth/sessions/' + encodeURIComponent(s.id));
+        if (r.was_current) { window.MarkwiseAPI.logout(); return; } // revoked self → sign out
+        toast('Session revoked'); await load();
+      } catch (e) { toast(e.message); } finally { setBusy(false); }
+    };
+    const revokeOthers = async () => {
+      setBusy(true);
+      try { const r = await API.post('/api/auth/sessions/revoke-others', {}); toast(r.revoked ? 'Signed out ' + r.revoked + ' other session' + (r.revoked === 1 ? '' : 's') : 'No other sessions'); await load(); }
+      catch (e) { toast(e.message); } finally { setBusy(false); }
+    };
+
+    if (!sessions) return <div className="card pad"><div className="empty-note">Loading…</div></div>;
+    const others = sessions.filter((s) => !s.current).length;
+    return (
+      <div className="card">
+        <table className="tbl">
+          <thead><tr><th>Device</th><th>Last active</th><th className="num"></th></tr></thead>
+          <tbody>
+            {sessions.map((s) => (
+              <tr key={s.id}>
+                <td>
+                  <b>{label(s.user_agent)}</b>
+                  {s.current ? <span className="pill green sm" style={{ marginLeft: 8 }}>This device</span> : null}
+                  {s.impersonated ? <span className="pill grey sm" style={{ marginLeft: 8 }}>Admin</span> : null}
+                </td>
+                <td className="dim">{mwAgo(s.last_seen)}</td>
+                <td className="num">
+                  <button className="ghost-btn sm" disabled={busy} onClick={() => revoke(s)}>{s.current ? 'Sign out' : 'Revoke'}</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {others > 0 ? (
+          <div className="rm-bar"><span>{others} other active session{others === 1 ? '' : 's'}.</span>
+            <button className="danger-btn sm" disabled={busy} onClick={revokeOthers}>Sign out other sessions</button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  Object.assign(window, { MWSettingsPage, MWPwMeter, mwPwScore, MWMfaCard, MWSessionsCard });
 })();

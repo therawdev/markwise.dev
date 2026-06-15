@@ -90,8 +90,15 @@ cost/quality. Directly covers your asks: keys-in-DB, detailed usage, request/res
 > 2FA:** an org owner toggles "require two-factor" (`companies.mfa_required`);
 > members without it are force-enrolled at next login before a session is issued,
 > and can't turn it off while required. SSO accounts defer 2FA to their IdP.
-> **Still open in P2:** SSO-`enforced` (disable passwords for a domain), session
-> management/revocation, login lockout; SAML/SCIM remain backlog.
+> **Enforced SSO, lockout & sessions shipped.** A connection's `enforced` flag
+> (org **Single sign-on** tab) refuses password login *and* signup for its allowed
+> domains — users must go through the IdP. Password accounts lock for 15 min after
+> 5 consecutive failures (`users.failed_logins`/`locked_until`), on top of the IP
+> rate limiter. Sessions are now server-tracked (`sessions` table; the cookie JWT
+> carries a `sid` that `requireAuth` validates), so **Settings → Security** lists
+> active devices and can revoke one or "sign out other sessions", and logout/
+> revocation invalidate the token immediately. Impersonation rides the same table.
+> **Still open in P2:** SAML 2.0 and SCIM remain backlog.
 
 ---
 

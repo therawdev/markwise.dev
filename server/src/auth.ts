@@ -1,30 +1,54 @@
 import jwt from 'jsonwebtoken';
+import { randomBytes } from 'node:crypto';
 import type { Response } from 'express';
+import { db } from './db.js';
 
 const SECRET = process.env.JWT_SECRET || 'markwise-dev-secret';
 export const COOKIE = 'mw_token';
 
-export function signToken(userId: number, impersonatedBy?: number): string {
-  const payload: { uid: number; imp?: number } = { uid: userId };
+export interface TokenPayload { uid: number; sid: string; imp?: number }
+
+export function signToken(userId: number, sid: string, impersonatedBy?: number): string {
+  const payload: TokenPayload = { uid: userId, sid };
   if (impersonatedBy) payload.imp = impersonatedBy;
   return jwt.sign(payload, SECRET, { expiresIn: '7d' });
 }
 
-export function verifyToken(token: string): { uid: number; imp?: number } | null {
+export function verifyToken(token: string): TokenPayload | null {
   try {
-    const payload = jwt.verify(token, SECRET) as { uid: number; imp?: number };
-    return payload && payload.uid ? payload : null;
+    const payload = jwt.verify(token, SECRET) as TokenPayload;
+    return payload && payload.uid && payload.sid ? payload : null;
   } catch {
     return null;
   }
 }
 
-export function setAuthCookie(res: Response, userId: number, impersonatedBy?: number) {
-  res.cookie(COOKIE, signToken(userId, impersonatedBy), {
-    httpOnly: true,
-    sameSite: 'lax',
-    maxAge: 7 * 24 * 3600 * 1000,
+function writeCookie(res: Response, token: string) {
+  res.cookie(COOKIE, token, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 3600 * 1000 });
+}
+
+/**
+ * Start a session: insert a row (so it can be listed/revoked) and set the cookie.
+ * The JWT carries the session id; requireAuth rejects tokens whose row is gone.
+ */
+export async function createSession(
+  res: Response,
+  userId: number,
+  opts: { impersonatedBy?: number; userAgent?: string } = {},
+): Promise<string> {
+  const sid = randomBytes(18).toString('base64url');
+  await db('sessions').insert({
+    id: sid,
+    user_id: userId,
+    impersonated_by: opts.impersonatedBy ?? null,
+    user_agent: (opts.userAgent || '').slice(0, 300),
   });
+  writeCookie(res, signToken(userId, sid, opts.impersonatedBy));
+  return sid;
+}
+
+export async function destroySession(sid: string): Promise<void> {
+  await db('sessions').where({ id: sid }).delete();
 }
 
 export function clearAuthCookie(res: Response) {
