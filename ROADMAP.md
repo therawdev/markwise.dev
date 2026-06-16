@@ -70,6 +70,36 @@ cost/quality. Directly covers your asks: keys-in-DB, detailed usage, request/res
 
 **Deliverables (P2):** `sso_connections` (org, type, config), `user_mfa`, `sessions` tables · OIDC auth flow + callbacks · org admin "Single sign-on" page · enforced-SSO middleware. Build the auth layer **provider-agnostic** (`type: oidc | saml`) so SAML/SCIM slot in later without a rewrite.
 
+> **Status: OIDC SSO shipped (first slice of P2).** Generic OIDC with discovery,
+> authorization-code + PKCE, and `jose`-verified id_tokens (`server/src/sso.ts`).
+> `sso_connections` table (`type` already `oidc|saml`-ready); client secret stored
+> AES-256-GCM encrypted. Per-org **Single sign-on** tab configures issuer/client/
+> secret/allowed-domains/default-role, with a discovery Test and the callback URL
+> to register at the IdP. Login start + `/api/sso/callback` JIT-provision the user
+> (or link by email) and enrol them in the company; the login page offers SSO by
+> email domain. Password login is rejected for SSO-only accounts.
+> **App-owner control:** SSO is gated per company by `companies.sso_allowed` —
+> the platform admin toggles it in the admin **Companies** tab, and only then can
+> the org owner configure and enable it. The public start/callback and the
+> login-page domain lookup all honor that gate.
+>
+> **MFA (TOTP) shipped.** `server/src/totp.ts` (RFC 6238, hand-rolled on node
+> crypto) + recovery codes; secret & codes AES-256-GCM encrypted. Any password
+> user enables 2FA from **Settings → Security** (QR via `qrcode`, verify, recovery
+> codes). Login becomes a two-step flow (`/api/auth/mfa/verify`). **Org-enforced
+> 2FA:** an org owner toggles "require two-factor" (`companies.mfa_required`);
+> members without it are force-enrolled at next login before a session is issued,
+> and can't turn it off while required. SSO accounts defer 2FA to their IdP.
+> **Enforced SSO, lockout & sessions shipped.** A connection's `enforced` flag
+> (org **Single sign-on** tab) refuses password login *and* signup for its allowed
+> domains — users must go through the IdP. Password accounts lock for 15 min after
+> 5 consecutive failures (`users.failed_logins`/`locked_until`), on top of the IP
+> rate limiter. Sessions are now server-tracked (`sessions` table; the cookie JWT
+> carries a `sid` that `requireAuth` validates), so **Settings → Security** lists
+> active devices and can revoke one or "sign out other sessions", and logout/
+> revocation invalidate the token immediately. Impersonation rides the same table.
+> **Still open in P2:** SAML 2.0 and SCIM remain backlog.
+
 ---
 
 ## Phase P3 — Governance, Billing & Platform Ops

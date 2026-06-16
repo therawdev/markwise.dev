@@ -256,6 +256,86 @@ async function migrate() {
     await db.schema.alterTable('memberships', (t) => { t.integer('ai_credit_limit'); });
   }
 
+  // SSO: JIT-provisioned users have no password, so password_hash must be nullable.
+  // (Postgres ALTER ... DROP NOT NULL is idempotent in practice; guard via info schema.)
+  const pwCol = await db('information_schema.columns')
+    .where({ table_name: 'users', column_name: 'password_hash' })
+    .first('is_nullable');
+  if (pwCol && pwCol.is_nullable === 'NO') {
+    await db.schema.alterTable('users', (t) => { t.string('password_hash').nullable().alter(); });
+  }
+
+  // Per-company OIDC single sign-on. client_secret is AES-256-GCM encrypted
+  // (secrets.ts). allowed_domains lets the login page route a matching email to
+  // this company's IdP. default_role_id is the role JIT-provisioned members get.
+  // enforced (future) will disable password login for matching domains.
+  if (!(await has('sso_connections'))) {
+    await db.schema.createTable('sso_connections', (t) => {
+      t.increments('id');
+      t.integer('company_id').notNullable().unique().references('companies.id').onDelete('CASCADE');
+      t.string('type').notNullable().defaultTo('oidc'); // oidc (saml later)
+      t.string('issuer').notNullable();        // e.g. https://accounts.google.com
+      t.string('client_id').notNullable();
+      t.text('client_secret_enc');             // encrypted; null for public/PKCE-only clients
+      t.jsonb('allowed_domains').notNullable().defaultTo('[]'); // lowercased email domains
+      t.integer('default_role_id').references('roles.id').onDelete('SET NULL');
+      t.boolean('enabled').notNullable().defaultTo(false);
+      t.boolean('enforced').notNullable().defaultTo(false);
+      t.timestamp('created_at').defaultTo(db.fn.now());
+      t.timestamp('updated_at').defaultTo(db.fn.now());
+    });
+  }
+
+  // How a user account was created / can authenticate. 'password' (default) or
+  // 'sso'. Used to tailor the login error when an SSO-only user tries a password.
+  if (!(await db.schema.hasColumn('users', 'auth_provider'))) {
+    await db.schema.alterTable('users', (t) => { t.string('auth_provider').notNullable().defaultTo('password'); });
+  }
+
+  // App-owner gate: a company can only use SSO once the platform admin allows it.
+  if (!(await db.schema.hasColumn('companies', 'sso_allowed'))) {
+    await db.schema.alterTable('companies', (t) => { t.boolean('sso_allowed').notNullable().defaultTo(false); });
+  }
+
+  // Org owners can require all password members to use 2FA.
+  if (!(await db.schema.hasColumn('companies', 'mfa_required'))) {
+    await db.schema.alterTable('companies', (t) => { t.boolean('mfa_required').notNullable().defaultTo(false); });
+  }
+
+  // TOTP multi-factor auth for password accounts (SSO accounts defer to the IdP).
+  // Secret + recovery codes are AES-256-GCM encrypted (secrets.ts).
+  if (!(await db.schema.hasColumn('users', 'mfa_enabled'))) {
+    await db.schema.alterTable('users', (t) => { t.boolean('mfa_enabled').notNullable().defaultTo(false); });
+  }
+  if (!(await db.schema.hasColumn('users', 'mfa_secret_enc'))) {
+    await db.schema.alterTable('users', (t) => { t.text('mfa_secret_enc'); });
+  }
+  if (!(await db.schema.hasColumn('users', 'mfa_recovery_enc'))) {
+    await db.schema.alterTable('users', (t) => { t.text('mfa_recovery_enc'); });
+  }
+
+  // Login lockout: consecutive password failures and a cooldown timestamp.
+  if (!(await db.schema.hasColumn('users', 'failed_logins'))) {
+    await db.schema.alterTable('users', (t) => { t.integer('failed_logins').notNullable().defaultTo(0); });
+  }
+  if (!(await db.schema.hasColumn('users', 'locked_until'))) {
+    await db.schema.alterTable('users', (t) => { t.timestamp('locked_until'); });
+  }
+
+  // Server-tracked sessions (so they can be listed and revoked). The auth cookie's
+  // JWT carries the session id (sid); requireAuth checks the row still exists.
+  if (!(await has('sessions'))) {
+    await db.schema.createTable('sessions', (t) => {
+      t.string('id').primary(); // random sid embedded in the JWT
+      t.integer('user_id').notNullable().references('users.id').onDelete('CASCADE');
+      t.integer('impersonated_by').references('users.id').onDelete('CASCADE');
+      t.string('user_agent', 300);
+      t.timestamp('created_at').defaultTo(db.fn.now());
+      t.timestamp('last_seen').defaultTo(db.fn.now());
+      t.index(['user_id']);
+    });
+  }
+
   // Backfill: every role that can edit documents should also be able to comment,
   // and the immutable Owner role gets the full (now-larger) permission set.
   const roles = await db('roles').select('id', 'name', 'is_system', 'permissions');

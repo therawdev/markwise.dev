@@ -7,8 +7,9 @@ import { DEFAULT_ROLES, PERMISSIONS, isValidPermissionList } from '../permission
 import { aiUsageSummary } from '../usage.js';
 import { aiQuotaStatus, aiMemberQuotaStatus, limitBehaviorFor, orgMemberDefaultCredits } from '../quota.js';
 import { listProviderConfigs, setProviderConfig } from '../providers/config.js';
-import { secretsConfigured } from '../secrets.js';
+import { secretsConfigured, encryptSecret } from '../secrets.js';
 import { PROVIDERS } from '../providers/index.js';
+import { getConnectionByCompany, discover } from '../sso.js';
 
 export const orgsRouter = Router();
 
@@ -107,6 +108,123 @@ orgsRouter.post('/:id/providers/:provider/test', async (req, res) => {
   } catch (e) {
     res.json({ ok: false, reason: e instanceof Error ? e.message : 'request failed' });
   }
+});
+
+// ---- per-company OIDC single sign-on (org:settings) ----
+function ssoCallbackUrl(req: import('express').Request): string {
+  const base = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+  return base + '/api/sso/callback';
+}
+
+orgsRouter.get('/:id/sso', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await canManageProviders(req, companyId))) {
+    return res.status(403).json({ error: 'You need the company settings permission' });
+  }
+  const conn = await getConnectionByCompany(companyId);
+  const company = await db('companies').where({ id: companyId }).first();
+  res.json({
+    secretsConfigured: secretsConfigured(),
+    sso_allowed: !!company?.sso_allowed, // platform-admin gate
+    callback_url: ssoCallbackUrl(req), // register this at the IdP
+    connection: conn ? {
+      type: conn.type, issuer: conn.issuer, client_id: conn.client_id,
+      allowed_domains: conn.allowed_domains, default_role_id: conn.default_role_id,
+      enabled: conn.enabled, enforced: conn.enforced, has_secret: !!conn.client_secret_enc,
+    } : null,
+  });
+});
+
+const ssoSchema = z.object({
+  issuer: z.string().url().max(300),
+  client_id: z.string().min(1).max(300),
+  client_secret: z.string().max(600).optional(), // omit to keep existing
+  allowed_domains: z.array(z.string().max(255)).max(50).optional(),
+  default_role_id: z.number().int().nullable().optional(),
+  enabled: z.boolean().optional(),
+  enforced: z.boolean().optional(),
+});
+
+orgsRouter.put('/:id/sso', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await canManageProviders(req, companyId))) {
+    return res.status(403).json({ error: 'You need the company settings permission' });
+  }
+  const parsed = ssoSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'A valid issuer URL and client ID are required' });
+  const d = parsed.data;
+  if (d.client_secret && !secretsConfigured()) {
+    return res.status(400).json({ error: 'Key storage is not configured on the server — contact the platform admin' });
+  }
+  // The org can only switch SSO on once the platform admin has allowed it.
+  if (d.enabled) {
+    const company = await db('companies').where({ id: companyId }).first();
+    if (!company?.sso_allowed) return res.status(403).json({ error: 'Single sign-on must be enabled for your organization by the platform admin first' });
+  }
+  // A custom default role must belong to this company.
+  if (d.default_role_id != null) {
+    const role = await db('roles').where({ id: d.default_role_id, company_id: companyId }).first();
+    if (!role) return res.status(400).json({ error: 'Default role not found in this company' });
+  }
+  const domains = (d.allowed_domains || [])
+    .map((s) => s.trim().toLowerCase().replace(/^@/, ''))
+    .filter((s) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(s));
+
+  const existing = await getConnectionByCompany(companyId);
+  const row: Record<string, unknown> = {
+    company_id: companyId, type: 'oidc', issuer: d.issuer.replace(/\/$/, ''), client_id: d.client_id,
+    allowed_domains: JSON.stringify(domains),
+    default_role_id: d.default_role_id ?? existing?.default_role_id ?? null,
+    enabled: d.enabled ?? existing?.enabled ?? false,
+    enforced: d.enforced ?? existing?.enforced ?? false,
+    updated_at: db.fn.now(),
+  };
+  if (d.client_secret !== undefined) row.client_secret_enc = d.client_secret ? encryptSecret(d.client_secret) : null;
+
+  if (existing) await db('sso_connections').where({ company_id: companyId }).update(row);
+  else await db('sso_connections').insert(row);
+  await audit(req.user!.id, 'company.sso_config', `company:${companyId}`, {
+    issuer: row.issuer, enabled: row.enabled, enforced: row.enforced, secretChanged: d.client_secret !== undefined,
+  });
+  res.json({ ok: true });
+});
+
+orgsRouter.delete('/:id/sso', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await canManageProviders(req, companyId))) {
+    return res.status(403).json({ error: 'You need the company settings permission' });
+  }
+  await db('sso_connections').where({ company_id: companyId }).delete();
+  await audit(req.user!.id, 'company.sso_delete', `company:${companyId}`);
+  res.json({ ok: true });
+});
+
+// Validate the issuer's OIDC discovery document before the org enables SSO.
+orgsRouter.post('/:id/sso/test', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await canManageProviders(req, companyId))) {
+    return res.status(403).json({ error: 'You need the company settings permission' });
+  }
+  const issuer = String(req.body?.issuer || '');
+  if (!/^https:\/\//.test(issuer)) return res.json({ ok: false, reason: 'Issuer must be an https URL' });
+  try {
+    const doc = await discover(issuer);
+    res.json({ ok: true, authorization_endpoint: doc.authorization_endpoint, token_endpoint: doc.token_endpoint });
+  } catch (e) {
+    res.json({ ok: false, reason: e instanceof Error ? e.message : 'Discovery failed' });
+  }
+});
+
+// ---- org security: require 2FA for password members (org:settings) ----
+orgsRouter.put('/:id/security', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await canManageProviders(req, companyId))) {
+    return res.status(403).json({ error: 'You need the company settings permission' });
+  }
+  const mfaRequired = req.body?.mfa_required === true;
+  await db('companies').where({ id: companyId }).update({ mfa_required: mfaRequired });
+  await audit(req.user!.id, 'company.security', `company:${companyId}`, { mfa_required: mfaRequired });
+  res.json({ ok: true, mfa_required: mfaRequired });
 });
 
 // ---- create a company; creator becomes Owner with system roles seeded ----

@@ -2,12 +2,38 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
+import QRCode from 'qrcode';
 import { db, audit, getSetting } from '../db.js';
-import { setAuthCookie, clearAuthCookie } from '../auth.js';
+import {
+  createSession, destroySession, clearAuthCookie, COOKIE, verifyToken, signMfaToken, verifyMfaToken,
+} from '../auth.js';
 import { requireAuth, permissionsFor } from '../middleware.js';
 import { authLimiter } from '../rate-limit.js';
+import { secretsConfigured, encryptSecret, decryptSecret } from '../secrets.js';
+import { generateSecret, verifyTotp, otpauthUri, generateRecoveryCodes, hashRecoveryCodes, consumeRecoveryCode } from '../totp.js';
+import { getEnforcedConnectionForEmail } from '../sso.js';
 
 export const authRouter = Router();
+
+// Consecutive password failures before an account is briefly locked.
+const LOCKOUT_THRESHOLD = 5;
+const LOCKOUT_MINUTES = 15;
+
+/** True when any of the user's companies requires 2FA for password members. */
+async function mfaRequiredByOrg(userId: number): Promise<boolean> {
+  const row = await db('memberships')
+    .join('companies', 'companies.id', 'memberships.company_id')
+    .where('memberships.user_id', userId)
+    .where('companies.mfa_required', true)
+    .first();
+  return !!row;
+}
+
+/** Finish a successful login: start a session and return the user payload. */
+async function loginOk(req: import('express').Request, res: import('express').Response, user: any) {
+  await createSession(res, user.id, { userAgent: req.headers['user-agent'] });
+  res.json({ id: user.id, email: user.email, name: user.name, is_app_owner: user.is_app_owner });
+}
 
 const credsSchema = z.object({
   email: z.string().email().max(200),
@@ -35,6 +61,11 @@ authRouter.post('/signup', authLimiter, async (req, res) => {
   const existing = await db('users').whereRaw('lower(email) = ?', email.toLowerCase()).first();
   if (existing) return res.status(409).json({ error: 'An account with this email already exists' });
 
+  // If the email's domain is under an enforced SSO org, no password accounts.
+  if (await getEnforcedConnectionForEmail(email)) {
+    return res.status(403).json({ error: 'Your organization requires single sign-on — use the SSO option to sign in' });
+  }
+
   const [user] = await db('users')
     .insert({
       email: email.toLowerCase(),
@@ -53,7 +84,7 @@ authRouter.post('/signup', authLimiter, async (req, res) => {
     joined = await db('companies').where({ id: invite.company_id }).first();
     await audit(user.id, 'invite.accept', `company:${invite.company_id}`, { invite_id: invite.id, company: joined?.name });
   }
-  setAuthCookie(res, user.id);
+  await createSession(res, user.id, { userAgent: req.headers['user-agent'] });
   res.json({
     id: user.id, email: user.email, name: user.name, is_app_owner: user.is_app_owner,
     joined: joined ? { id: joined.id, name: joined.name } : null,
@@ -65,17 +96,61 @@ authRouter.post('/login', authLimiter, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'Email and password required' });
   const { email, password } = parsed.data;
 
+  // Enforced SSO wins even for accounts that still have a password.
+  if (await getEnforcedConnectionForEmail(email)) {
+    return res.status(403).json({ error: 'Your organization requires single sign-on — use the SSO option to sign in' });
+  }
+
   const user = await db('users').whereRaw('lower(email) = ?', email.toLowerCase()).first();
-  if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+  // SSO-provisioned accounts have no password — point them at single sign-on.
+  if (user && !user.password_hash) {
+    return res.status(403).json({ error: 'This account uses single sign-on — use your organization’s SSO to sign in' });
+  }
+  // Account lockout after repeated failures.
+  if (user && user.locked_until && new Date(user.locked_until) > new Date()) {
+    const mins = Math.max(1, Math.ceil((new Date(user.locked_until).getTime() - Date.now()) / 60000));
+    return res.status(429).json({ error: `Too many failed attempts — try again in ${mins} minute${mins === 1 ? '' : 's'}` });
+  }
+
+  const passwordOk = !!user && !!user.password_hash && (await bcrypt.compare(password, user.password_hash));
+  if (!passwordOk) {
+    if (user) {
+      // Count the failure; lock the account once the threshold is crossed.
+      const fails = (user.failed_logins || 0) + 1;
+      const patch: Record<string, unknown> = { failed_logins: fails };
+      if (fails >= LOCKOUT_THRESHOLD) {
+        patch.failed_logins = 0;
+        patch.locked_until = new Date(Date.now() + LOCKOUT_MINUTES * 60000);
+        await audit(user.id, 'user.locked', `user:${user.id}`, { minutes: LOCKOUT_MINUTES });
+      }
+      await db('users').where({ id: user.id }).update(patch);
+    }
     return res.status(401).json({ error: 'Wrong email or password' });
   }
   if (user.status !== 'active') return res.status(403).json({ error: 'Account suspended' });
 
-  setAuthCookie(res, user.id);
-  res.json({ id: user.id, email: user.email, name: user.name, is_app_owner: user.is_app_owner });
+  // Successful password → clear any failure/lock counters.
+  if (user.failed_logins || user.locked_until) {
+    await db('users').where({ id: user.id }).update({ failed_logins: 0, locked_until: null });
+  }
+
+  // Second factor: enrolled users owe a code; if an org requires 2FA and the user
+  // hasn't set it up, force enrolment before the session is issued.
+  if (user.mfa_enabled) {
+    return res.json({ mfa_required: true, mfa_token: signMfaToken(user.id, 'mfa') });
+  }
+  if (await mfaRequiredByOrg(user.id)) {
+    return res.json({ mfa_setup_required: true, mfa_token: signMfaToken(user.id, 'mfa_setup') });
+  }
+
+  await loginOk(req, res, user);
 });
 
-authRouter.post('/logout', (_req, res) => {
+authRouter.post('/logout', async (req, res) => {
+  // End the server-side session so the (still-unexpired) cookie can't be reused.
+  const token = req.cookies?.[COOKIE];
+  const payload = token ? verifyToken(token) : null;
+  if (payload) await destroySession(payload.sid);
   clearAuthCookie(res);
   res.json({ ok: true });
 });
@@ -207,6 +282,141 @@ authRouter.put('/password', requireAuth, async (req, res) => {
   await db('users').where({ id: me.id }).update({ password_hash: await bcrypt.hash(password, 10) });
   await audit(me.id, 'user.password', `user:${me.id}`);
   res.json({ ok: true });
+});
+
+// ---- MFA (TOTP) ----
+// Resolve the acting user from either a live session or a one-time 'mfa_setup'
+// token (used when an org forces enrolment mid-login, before a session exists).
+async function mfaActor(req: import('express').Request): Promise<{ user: any; viaSetup: boolean } | null> {
+  const tok = req.cookies?.[COOKIE];
+  const payload = tok ? verifyToken(tok) : null;
+  if (payload) {
+    const u = await db('users').where({ id: payload.uid }).first();
+    if (u && u.status === 'active') return { user: u, viaSetup: false };
+  }
+  const setupTok = typeof req.body?.mfa_token === 'string' ? req.body.mfa_token : null;
+  if (setupTok) {
+    const uid = verifyMfaToken(setupTok, 'mfa_setup');
+    if (uid) {
+      const u = await db('users').where({ id: uid }).first();
+      if (u && u.status === 'active') return { user: u, viaSetup: true };
+    }
+  }
+  return null;
+}
+
+// Status for the settings UI.
+authRouter.get('/mfa', requireAuth, async (req, res) => {
+  const u = await db('users').where({ id: req.user!.id }).first();
+  res.json({
+    enabled: !!u.mfa_enabled,
+    required: await mfaRequiredByOrg(req.user!.id), // org enforces it → can't disable
+    secretsConfigured: secretsConfigured(),
+    is_sso: !u.password_hash,
+  });
+});
+
+// Begin enrolment: issue a fresh secret + QR. Not active until verified.
+authRouter.post('/mfa/setup', async (req, res) => {
+  if (!secretsConfigured()) return res.status(400).json({ error: 'Server secret storage is not configured' });
+  const actor = await mfaActor(req);
+  if (!actor) return res.status(401).json({ error: 'Not signed in' });
+  if (actor.user.mfa_enabled) return res.status(400).json({ error: 'Two-factor is already enabled' });
+
+  const secret = generateSecret();
+  await db('users').where({ id: actor.user.id }).update({ mfa_secret_enc: encryptSecret(secret) });
+  const uri = otpauthUri(secret, actor.user.email);
+  const qr_svg = await QRCode.toString(uri, { type: 'svg', margin: 1, width: 200 });
+  res.json({ secret, otpauth_uri: uri, qr_svg });
+});
+
+// Verify the first code and turn 2FA on; returns one-time recovery codes.
+authRouter.post('/mfa/enable', async (req, res) => {
+  const actor = await mfaActor(req);
+  if (!actor) return res.status(401).json({ error: 'Not signed in' });
+  const user = actor.user;
+  if (user.mfa_enabled) return res.status(400).json({ error: 'Two-factor is already enabled' });
+  if (!user.mfa_secret_enc) return res.status(400).json({ error: 'Start setup first' });
+
+  let secret: string;
+  try { secret = decryptSecret(user.mfa_secret_enc); } catch { return res.status(400).json({ error: 'Setup expired — start again' }); }
+  if (!verifyTotp(secret, String(req.body?.code || ''))) return res.status(400).json({ error: 'That code is not valid — check your authenticator and try again' });
+
+  const recovery = generateRecoveryCodes();
+  await db('users').where({ id: user.id }).update({
+    mfa_enabled: true,
+    mfa_recovery_enc: encryptSecret(JSON.stringify(hashRecoveryCodes(recovery))),
+  });
+  await audit(user.id, 'user.mfa_enable', `user:${user.id}`);
+  // If this completed a forced mid-login enrolment, issue the session now.
+  if (actor.viaSetup) await createSession(res, user.id, { userAgent: req.headers['user-agent'] });
+  res.json({ ok: true, recovery_codes: recovery });
+});
+
+// Second-factor step at login: exchange the 'mfa' token + code for a session.
+authRouter.post('/mfa/verify', authLimiter, async (req, res) => {
+  const uid = verifyMfaToken(String(req.body?.mfa_token || ''), 'mfa');
+  if (!uid) return res.status(401).json({ error: 'Your sign-in attempt expired — start again' });
+  const user = await db('users').where({ id: uid }).first();
+  if (!user || !user.mfa_enabled || user.status !== 'active') return res.status(401).json({ error: 'Sign in again' });
+
+  const code = String(req.body?.code || '').trim();
+  let ok = false;
+  try {
+    if (user.mfa_secret_enc && verifyTotp(decryptSecret(user.mfa_secret_enc), code)) ok = true;
+  } catch { /* fall through */ }
+  // Recovery code fallback (single use).
+  if (!ok && user.mfa_recovery_enc) {
+    try {
+      const remaining = consumeRecoveryCode(code, JSON.parse(decryptSecret(user.mfa_recovery_enc)));
+      if (remaining) { ok = true; await db('users').where({ id: user.id }).update({ mfa_recovery_enc: encryptSecret(JSON.stringify(remaining)) }); await audit(user.id, 'user.mfa_recovery_used', `user:${user.id}`); }
+    } catch { /* ignore */ }
+  }
+  if (!ok) return res.status(400).json({ error: 'That code is not valid' });
+  await loginOk(req, res, user);
+});
+
+// Turn 2FA off — blocked while an org requires it. Re-verify with a current code.
+authRouter.post('/mfa/disable', requireAuth, async (req, res) => {
+  const user = await db('users').where({ id: req.user!.id }).first();
+  if (!user.mfa_enabled) return res.status(400).json({ error: 'Two-factor is not enabled' });
+  if (await mfaRequiredByOrg(user.id)) return res.status(403).json({ error: 'Your organization requires two-factor authentication — it can’t be turned off' });
+  let ok = false;
+  try { ok = !!user.mfa_secret_enc && verifyTotp(decryptSecret(user.mfa_secret_enc), String(req.body?.code || '')); } catch { /* */ }
+  if (!ok) return res.status(400).json({ error: 'Enter a current authenticator code to turn off two-factor' });
+  await db('users').where({ id: user.id }).update({ mfa_enabled: false, mfa_secret_enc: null, mfa_recovery_enc: null });
+  await audit(user.id, 'user.mfa_disable', `user:${user.id}`);
+  res.json({ ok: true });
+});
+
+// ---- active sessions: list / revoke one / revoke all others ----
+authRouter.get('/sessions', requireAuth, async (req, res) => {
+  const rows = await db('sessions')
+    .where({ user_id: req.user!.id })
+    .orderBy('last_seen', 'desc')
+    .select('id', 'user_agent', 'impersonated_by', 'created_at', 'last_seen');
+  res.json(rows.map((s) => ({
+    id: s.id,
+    user_agent: s.user_agent || '',
+    impersonated: !!s.impersonated_by,
+    created_at: s.created_at,
+    last_seen: s.last_seen,
+    current: s.id === req.sessionId,
+  })));
+});
+
+authRouter.delete('/sessions/:id', requireAuth, async (req, res) => {
+  const sid = String(req.params.id);
+  const sess = await db('sessions').where({ id: sid, user_id: req.user!.id }).first();
+  if (!sess) return res.status(404).json({ error: 'Session not found' });
+  await db('sessions').where({ id: sid }).delete();
+  res.json({ ok: true, was_current: sid === req.sessionId });
+});
+
+authRouter.post('/sessions/revoke-others', requireAuth, async (req, res) => {
+  const n = await db('sessions').where({ user_id: req.user!.id }).whereNot('id', req.sessionId!).delete();
+  await audit(req.user!.id, 'user.sessions_revoked', `user:${req.user!.id}`, { count: n });
+  res.json({ ok: true, revoked: n });
 });
 
 // ---- delete account ----

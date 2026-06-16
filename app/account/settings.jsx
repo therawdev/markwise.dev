@@ -265,10 +265,11 @@
                       </form>
                     </div>
                   </MWSection>
-                  <MWSection title="Active session">
-                    <div className="card pad">
-                      <p style={{ margin: 0, fontSize: 13, color: 'var(--grey)' }}>You&rsquo;re signed in on this device.</p>
-                    </div>
+                  <MWSection title="Two-factor authentication" sub="Add a one-time code from an authenticator app to your sign-in.">
+                    <MWMfaCard toast={toast} />
+                  </MWSection>
+                  <MWSection title="Active sessions" sub="Devices signed in to your account. Revoke any you don’t recognize.">
+                    <MWSessionsCard toast={toast} />
                   </MWSection>
                 </React.Fragment>
               ) : null}
@@ -388,5 +389,158 @@
     );
   }
 
-  Object.assign(window, { MWSettingsPage, MWPwMeter, mwPwScore });
+  // ── two-factor (TOTP) card ──────────────────────────────────────────────────
+  function MWMfaCard({ toast }) {
+    const API = window.MarkwiseAPI;
+    const [st, setSt] = useState(null);      // { enabled, required, secretsConfigured, is_sso }
+    const [setup, setSetup] = useState(null); // { secret, qr_svg }
+    const [code, setCode] = useState('');
+    const [recovery, setRecovery] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState(null);
+
+    const load = () => API.get('/api/auth/mfa').then(setSt).catch(() => {});
+    useEffect(() => { load(); }, []);
+
+    if (!st) return <div className="card pad"><div className="empty-note">Loading…</div></div>;
+    if (st.is_sso) return <div className="card pad"><p className="dim" style={{ margin: 0, fontSize: 13 }}>Your account signs in with single sign-on — two-factor is managed by your identity provider.</p></div>;
+
+    const begin = async () => {
+      setBusy(true); setErr(null);
+      try { setSetup(await API.post('/api/auth/mfa/setup', {})); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    };
+    const enable = async () => {
+      setBusy(true); setErr(null);
+      try {
+        const r = await API.post('/api/auth/mfa/enable', { code: code.trim() });
+        setRecovery(r.recovery_codes || []); setSetup(null); setCode(''); await load(); toast('Two-factor enabled');
+      } catch (e) { setErr(e.message); } finally { setBusy(false); }
+    };
+    const disable = async () => {
+      setBusy(true); setErr(null);
+      try { await API.post('/api/auth/mfa/disable', { code: code.trim() }); setCode(''); setRecovery(null); await load(); toast('Two-factor disabled'); }
+      catch (e) { setErr(e.message); } finally { setBusy(false); }
+    };
+
+    // Freshly enabled — show recovery codes once.
+    if (recovery) {
+      return (
+        <div className="card pad">
+          <b>Save your recovery codes</b>
+          <p className="dim" style={{ fontSize: 13, margin: '4px 0 8px' }}>Each can be used once if you lose your authenticator.</p>
+          <div className="mfa-codes">{recovery.map((c) => <code key={c}>{c}</code>)}</div>
+          <button className="secondary-btn" onClick={() => setRecovery(null)}>Done</button>
+        </div>
+      );
+    }
+
+    if (st.enabled) {
+      return (
+        <div className="card pad">
+          <div className="set-row" style={{ borderBottom: 'none' }}>
+            <div><b>Two-factor is on</b><p>{st.required ? 'Required by your organization — it can’t be turned off.' : 'Your account is protected with an authenticator app.'}</p></div>
+            <MWPill tone="green">Enabled</MWPill>
+          </div>
+          {!st.required ? (
+            <div className="inline-form" style={{ marginTop: 8 }}>
+              <input className="fld" placeholder="Current code to turn off" value={code} onChange={(e) => { setCode(e.target.value); setErr(null); }} />
+              <button className="danger-btn" disabled={busy || !code} onClick={disable}>Turn off</button>
+            </div>
+          ) : null}
+          {err ? <div className="form-error">{err}</div> : null}
+        </div>
+      );
+    }
+
+    // Not enabled
+    if (!setup) {
+      return (
+        <div className="card pad">
+          <div className="set-row" style={{ borderBottom: 'none' }}>
+            <div><b>Two-factor is off</b><p>{st.required ? 'Your organization requires it — set it up now.' : 'Protect your account with an authenticator app.'}</p></div>
+            <button className="primary-btn" disabled={busy || !st.secretsConfigured} onClick={begin}>Set up</button>
+          </div>
+          {!st.secretsConfigured ? <p className="dim" style={{ fontSize: 12, margin: '6px 0 0' }}>Server secret storage isn’t configured — ask the platform admin.</p> : null}
+          {err ? <div className="form-error">{err}</div> : null}
+        </div>
+      );
+    }
+
+    // Mid-setup: QR + confirm code
+    return (
+      <div className="card pad">
+        <p className="dim" style={{ fontSize: 13, marginTop: 0 }}>Scan with an authenticator app (Google Authenticator, 1Password, Authy…), then enter a code.</p>
+        <div className="mfa-qr" dangerouslySetInnerHTML={{ __html: setup.qr_svg }} />
+        <div className="mfa-secret">Or enter this key: <code>{setup.secret}</code></div>
+        <div className="inline-form">
+          <input className="fld" autoFocus placeholder="123456" value={code} onChange={(e) => { setCode(e.target.value); setErr(null); }} />
+          <button className="primary-btn" disabled={busy || !code} onClick={enable}>Verify &amp; enable</button>
+          <button className="ghost-btn" disabled={busy} onClick={() => { setSetup(null); setCode(''); setErr(null); }}>Cancel</button>
+        </div>
+        {err ? <div className="form-error">{err}</div> : null}
+      </div>
+    );
+  }
+
+  // ── active sessions card ────────────────────────────────────────────────────
+  function MWSessionsCard({ toast }) {
+    const API = window.MarkwiseAPI;
+    const [sessions, setSessions] = useState(null);
+    const [busy, setBusy] = useState(false);
+    const load = () => API.get('/api/auth/sessions').then(setSessions).catch(() => setSessions([]));
+    useEffect(() => { load(); }, []);
+
+    // Turn a UA string into a short, friendly label.
+    const label = (ua) => {
+      if (!ua) return 'Unknown device';
+      const browser = /Edg/.test(ua) ? 'Edge' : /Chrome/.test(ua) ? 'Chrome' : /Firefox/.test(ua) ? 'Firefox' : /Safari/.test(ua) ? 'Safari' : 'Browser';
+      const os = /Windows/.test(ua) ? 'Windows' : /Mac OS|Macintosh/.test(ua) ? 'macOS' : /Android/.test(ua) ? 'Android' : /iPhone|iPad|iOS/.test(ua) ? 'iOS' : /Linux/.test(ua) ? 'Linux' : '';
+      return browser + (os ? ' · ' + os : '');
+    };
+    const revoke = async (s) => {
+      setBusy(true);
+      try {
+        const r = await API.del('/api/auth/sessions/' + encodeURIComponent(s.id));
+        if (r.was_current) { window.MarkwiseAPI.logout(); return; } // revoked self → sign out
+        toast('Session revoked'); await load();
+      } catch (e) { toast(e.message); } finally { setBusy(false); }
+    };
+    const revokeOthers = async () => {
+      setBusy(true);
+      try { const r = await API.post('/api/auth/sessions/revoke-others', {}); toast(r.revoked ? 'Signed out ' + r.revoked + ' other session' + (r.revoked === 1 ? '' : 's') : 'No other sessions'); await load(); }
+      catch (e) { toast(e.message); } finally { setBusy(false); }
+    };
+
+    if (!sessions) return <div className="card pad"><div className="empty-note">Loading…</div></div>;
+    const others = sessions.filter((s) => !s.current).length;
+    return (
+      <div className="card">
+        <table className="tbl">
+          <thead><tr><th>Device</th><th>Last active</th><th className="num"></th></tr></thead>
+          <tbody>
+            {sessions.map((s) => (
+              <tr key={s.id}>
+                <td>
+                  <b>{label(s.user_agent)}</b>
+                  {s.current ? <span className="pill green sm" style={{ marginLeft: 8 }}>This device</span> : null}
+                  {s.impersonated ? <span className="pill grey sm" style={{ marginLeft: 8 }}>Admin</span> : null}
+                </td>
+                <td className="dim">{mwAgo(s.last_seen)}</td>
+                <td className="num">
+                  <button className="ghost-btn sm" disabled={busy} onClick={() => revoke(s)}>{s.current ? 'Sign out' : 'Revoke'}</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {others > 0 ? (
+          <div className="rm-bar"><span>{others} other active session{others === 1 ? '' : 's'}.</span>
+            <button className="danger-btn sm" disabled={busy} onClick={revokeOthers}>Sign out other sessions</button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  Object.assign(window, { MWSettingsPage, MWPwMeter, mwPwScore, MWMfaCard, MWSessionsCard });
 })();

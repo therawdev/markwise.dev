@@ -218,6 +218,16 @@
       } catch (e) { toast(e.message); }
     };
 
+    // Allow/disallow single sign-on for a company (the org then configures it).
+    const toggleCompanySso = async (c) => {
+      const next = !c.sso_allowed;
+      try {
+        await API.put('/api/admin/companies/' + c.id + '/sso-allowed', { allowed: next });
+        toast(next ? 'SSO enabled for ' + c.name : 'SSO disabled for ' + c.name);
+        await refetchCompanies();
+      } catch (e) { toast(e.message); }
+    };
+
     // ---- platform ----
     const togglePlatformFlag = async (key, onMsg, offMsg) => {
       const cur = platform[key];
@@ -666,6 +676,7 @@
                         <th>Name</th>
                         <th>Plan</th>
                         <th>Members</th>
+                        <th>SSO</th>
                         <th>Status</th>
                         <th className="num"></th>
                       </tr>
@@ -682,6 +693,12 @@
                           </td>
                           <td>{c.plan || 'free'}</td>
                           <td>{c.member_count || 0}</td>
+                          <td>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <MWSwitch on={!!c.sso_allowed} onChange={() => toggleCompanySso(c)} />
+                              <span className="dim sm-note">{c.sso_allowed ? 'Allowed' : 'Off'}</span>
+                            </span>
+                          </td>
                           <td>
                             <MWPill tone={c.status === 'active' ? 'green' : 'red'}>
                               {c.status === 'active' ? 'Active' : 'Suspended'}
