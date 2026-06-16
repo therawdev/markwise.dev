@@ -104,6 +104,7 @@ ssoRouter.get('/callback', async (req, res) => {
     await createSession(res, user.id, { userAgent: req.headers['user-agent'] });
     res.redirect(st.next || '/docs');
   } catch (e) {
+    console.error('[SSO callback] error:', e);
     fail(e instanceof Error ? e.message : 'Single sign-on failed');
   }
 });

@@ -1,3 +1,10 @@
+import { webcrypto } from 'node:crypto';
+// jose's webapi build (OIDC SSO token verification) references the global Web Crypto
+// API. Node 18 does NOT expose `globalThis.crypto` to file / `tsx watch` processes
+// (only with --experimental-global-webcrypto), so SSO callbacks throw
+// "crypto is not defined". Polyfill it once, before anything serves a request.
+if (!globalThis.crypto) Object.defineProperty(globalThis, 'crypto', { value: webcrypto, configurable: true });
+
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
