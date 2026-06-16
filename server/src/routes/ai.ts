@@ -5,7 +5,7 @@ import { activeProvider, providerStatus, PROVIDERS } from '../providers/index.js
 import { resolveRuntime } from '../providers/config.js';
 import { aiUsageSummary } from '../usage.js';
 import { aiLimiter } from '../rate-limit.js';
-import { aiQuotaStatus, aiGenerationGate } from '../quota.js';
+import { aiQuotaStatus, aiGenerationGate, aiMemberQuotaStatus } from '../quota.js';
 
 export const aiRouter = Router();
 aiRouter.use(requireAuth);
@@ -25,6 +25,12 @@ aiRouter.get('/quota', async (req, res) => {
   if (companyId != null && !(await hasPermission(req.user!, companyId, 'doc:view'))) {
     return res.status(403).json({ error: 'No access' });
   }
+  // A member's "personal" bar shows their company-member credit standing (since their
+  // usage draws the company pool) when they belong to exactly one company.
+  if (companyId == null && !req.user!.is_app_owner) {
+    const ms = await db('memberships').where({ user_id: req.user!.id, status: 'active' }).select('company_id');
+    if (ms.length === 1) return res.json(await aiMemberQuotaStatus(ms[0].company_id, req.user!.id));
+  }
   res.json(await aiQuotaStatus(companyId != null ? { companyId } : { userId: req.user!.id }));
 });
 
@@ -38,8 +44,15 @@ aiRouter.post('/complete', aiLimiter, async (req, res) => {
   if (!prompt.trim()) return res.status(400).json({ error: 'Prompt required' });
   if (prompt.length > 20000) return res.status(413).json({ error: 'Prompt too long' });
 
+  // A company member's usage draws the company's credits, not personal. Use the doc's
+  // company when supplied; otherwise, if the user is an active member of exactly one
+  // company, attribute the generation there (members have no separate personal pool).
+  let companyId = req.body?.company_id ? Number(req.body.company_id) : null;
+  if (companyId == null && !req.user!.is_app_owner) {
+    const ms = await db('memberships').where({ user_id: req.user!.id, status: 'active' }).select('company_id');
+    if (ms.length === 1) companyId = ms[0].company_id;
+  }
   // Company members need the ai:generate permission; personal use is always allowed.
-  const companyId = req.body?.company_id ? Number(req.body.company_id) : null;
   if (companyId != null && !(await hasPermission(req.user!, companyId, 'ai:generate'))) {
     return res.status(403).json({ error: 'You need the AI permission in this company' });
   }

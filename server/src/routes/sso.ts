@@ -76,9 +76,10 @@ ssoRouter.get('/callback', async (req, res) => {
     const identity = await verifyIdToken(doc, conn, idToken, st.nonce);
     if (!identity.emailVerified) return fail('Your identity provider reports this email as unverified');
 
-    // Find or JIT-provision the user, then ensure company membership.
+    // Find or JIT-provision the user, then ensure company membership. New SSO users
+    // (and any join into a company) are *pending* — an owner must approve before login.
     let user = await db('users').whereRaw('lower(email) = ?', identity.email).first();
-    if (user && user.status !== 'active') return fail('This account is suspended');
+    if (user && user.status === 'suspended') return fail('This account is suspended');
     if (!user) {
       [user] = await db('users')
         .insert({
@@ -86,6 +87,7 @@ ssoRouter.get('/callback', async (req, res) => {
           password_hash: null,
           name: identity.name || identity.email.split('@')[0],
           auth_provider: 'sso',
+          status: 'pending',
         })
         .returning('*');
       await audit(user.id, 'user.sso_provision', `user:${user.id}`, { company_id: conn.company_id });
@@ -96,10 +98,12 @@ ssoRouter.get('/callback', async (req, res) => {
       const roleId = conn.default_role_id
         || (await db('roles').where({ company_id: conn.company_id, name: 'User' }).first())?.id;
       if (roleId) {
-        await db('memberships').insert({ user_id: user.id, company_id: conn.company_id, role_id: roleId });
+        await db('memberships').insert({ user_id: user.id, company_id: conn.company_id, role_id: roleId, status: 'pending' });
         await audit(user.id, 'member.sso_join', `company:${conn.company_id}`, { via: 'sso' });
       }
     }
+
+    if (user.status !== 'active') return fail('Your account is awaiting approval by a company owner.');
 
     await createSession(res, user.id, { userAgent: req.headers['user-agent'] });
     res.redirect(st.next || '/docs');

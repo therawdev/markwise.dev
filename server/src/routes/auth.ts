@@ -66,15 +66,34 @@ authRouter.post('/signup', authLimiter, async (req, res) => {
     return res.status(403).json({ error: 'Your organization requires single sign-on — use the SSO option to sign in' });
   }
 
+  // Email-domain auto-join: a non-invited signup whose domain matches a company is
+  // added as a *pending* member and cannot sign in until an owner approves.
+  const emailDomain = email.toLowerCase().split('@')[1] || '';
+  const domainCompanies = !invite && emailDomain
+    ? await db('companies').whereRaw('email_domains @> ?::jsonb', [JSON.stringify([emailDomain])])
+    : [];
+  const pending = domainCompanies.length > 0;
+
   const [user] = await db('users')
     .insert({
       email: email.toLowerCase(),
       password_hash: await bcrypt.hash(password, 10),
       name: name || email.split('@')[0],
+      status: pending ? 'pending' : 'active',
     })
     .returning('*');
-
   await audit(user.id, 'user.signup', `user:${user.id}`);
+
+  if (pending) {
+    for (const co of domainCompanies) {
+      const userRole = await db('roles').where({ company_id: co.id, name: 'User' }).first();
+      if (userRole) await db('memberships').insert({ user_id: user.id, company_id: co.id, role_id: userRole.id, status: 'pending' });
+      await audit(user.id, 'member.join_request', `company:${co.id}`, { company: co.name });
+    }
+    // No session is issued — the account stays pending until an owner approves it.
+    return res.json({ pending: true, message: `Your account is awaiting approval by ${domainCompanies.map((c) => c.name).join(', ')}.` });
+  }
+
   let joined: any = null;
   if (invite) {
     await db.transaction(async (trx) => {
@@ -127,6 +146,7 @@ authRouter.post('/login', authLimiter, async (req, res) => {
     }
     return res.status(401).json({ error: 'Wrong email or password' });
   }
+  if (user.status === 'pending') return res.status(403).json({ error: 'Your account is awaiting approval by a company owner.' });
   if (user.status !== 'active') return res.status(403).json({ error: 'Account suspended' });
 
   // Successful password → clear any failure/lock counters.

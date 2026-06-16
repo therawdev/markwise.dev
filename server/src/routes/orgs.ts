@@ -229,6 +229,8 @@ orgsRouter.put('/:id/security', async (req, res) => {
 
 // ---- create a company; creator becomes Owner with system roles seeded ----
 orgsRouter.post('/', async (req, res) => {
+  // Only the app administrator can create companies; org owners/users cannot.
+  if (!req.user!.is_app_owner) return res.status(403).json({ error: 'Only the app administrator can create companies.' });
   const name = String(req.body?.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Company name required' });
 
@@ -273,7 +275,7 @@ orgsRouter.get('/:id', async (req, res) => {
     .join('users', 'users.id', 'memberships.user_id')
     .join('roles', 'roles.id', 'memberships.role_id')
     .where('memberships.company_id', companyId)
-    .select('users.id', 'users.name', 'users.email', 'roles.name as role', 'roles.id as role_id');
+    .select('users.id', 'users.name', 'users.email', 'roles.name as role', 'roles.id as role_id', 'memberships.status as member_status');
 
   const roles = await db('roles').where({ company_id: companyId }).orderBy('id');
   res.json({
@@ -377,6 +379,53 @@ orgsRouter.delete('/:id/members/:userId', async (req, res) => {
   if (userId === req.user!.id) return res.status(400).json({ error: 'You cannot remove yourself' });
   await db('memberships').where({ company_id: companyId, user_id: userId }).delete();
   await audit(req.user!.id, 'member.remove', `user:${userId}`, { company_id: companyId });
+  res.json({ ok: true });
+});
+
+// ---- pending members (domain-join requests awaiting approval) ----
+orgsRouter.get('/:id/pending', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await hasPermission(req.user!, companyId, 'org:manage_members'))) {
+    return res.status(403).json({ error: 'You need the manage-members permission' });
+  }
+  const rows = await db('memberships')
+    .join('users', 'users.id', 'memberships.user_id')
+    .where({ 'memberships.company_id': companyId, 'memberships.status': 'pending' })
+    .select('users.id', 'users.name', 'users.email', 'memberships.created_at')
+    .orderBy('memberships.created_at', 'asc');
+  res.json(rows);
+});
+
+// Approve a pending member → they (and their account) become active and can sign in.
+orgsRouter.post('/:id/members/:userId/approve', async (req, res) => {
+  const companyId = Number(req.params.id);
+  const userId = Number(req.params.userId);
+  if (!(await hasPermission(req.user!, companyId, 'org:manage_members'))) {
+    return res.status(403).json({ error: 'You need the manage-members permission' });
+  }
+  const m = await db('memberships').where({ company_id: companyId, user_id: userId, status: 'pending' }).first();
+  if (!m) return res.status(404).json({ error: 'No pending request for this user' });
+  await db('memberships').where({ company_id: companyId, user_id: userId }).update({ status: 'active' });
+  // A user pending purely on this join can now sign in.
+  await db('users').where({ id: userId, status: 'pending' }).update({ status: 'active' });
+  await audit(req.user!.id, 'member.approve', `user:${userId}`, { company_id: companyId });
+  res.json({ ok: true });
+});
+
+// Reject a pending request → drop the membership; clean up an orphaned pending account.
+orgsRouter.post('/:id/members/:userId/reject', async (req, res) => {
+  const companyId = Number(req.params.id);
+  const userId = Number(req.params.userId);
+  if (!(await hasPermission(req.user!, companyId, 'org:manage_members'))) {
+    return res.status(403).json({ error: 'You need the manage-members permission' });
+  }
+  await db('memberships').where({ company_id: companyId, user_id: userId, status: 'pending' }).delete();
+  const u = await db('users').where({ id: userId }).first();
+  const others = await db('memberships').where({ user_id: userId }).count('id as n').first();
+  if (u && u.status === 'pending' && Number((others as any)?.n ?? 0) === 0) {
+    await db('users').where({ id: userId }).delete(); // never-approved account, free the email
+  }
+  await audit(req.user!.id, 'member.reject', `user:${userId}`, { company_id: companyId });
   res.json({ ok: true });
 });
 

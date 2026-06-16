@@ -256,6 +256,33 @@ async function migrate() {
     await db.schema.alterTable('memberships', (t) => { t.integer('ai_credit_limit'); });
   }
 
+  // Email-domain auto-join: a signup whose email domain matches a company's
+  // email_domains is added to that company as a *pending* member, and can't sign in
+  // (password or SSO) until an owner approves. status: 'active' | 'pending'.
+  if (!(await db.schema.hasColumn('companies', 'email_domains'))) {
+    await db.schema.alterTable('companies', (t) => { t.jsonb('email_domains').notNullable().defaultTo('[]'); });
+  }
+  if (!(await db.schema.hasColumn('memberships', 'status'))) {
+    await db.schema.alterTable('memberships', (t) => { t.string('status').notNullable().defaultTo('active'); });
+  }
+
+  // Projects: a named folder that groups documents inside a company.
+  if (!(await has('projects'))) {
+    await db.schema.createTable('projects', (t) => {
+      t.increments('id');
+      t.integer('company_id').notNullable().references('companies.id').onDelete('CASCADE');
+      t.string('name').notNullable();
+      t.integer('created_by').references('users.id').onDelete('SET NULL');
+      t.timestamp('created_at').defaultTo(db.fn.now());
+      t.index(['company_id']);
+    });
+  }
+  if (!(await db.schema.hasColumn('documents', 'project_id'))) {
+    await db.schema.alterTable('documents', (t) => {
+      t.integer('project_id').references('projects.id').onDelete('SET NULL'); // null = no project
+    });
+  }
+
   // SSO: JIT-provisioned users have no password, so password_hash must be nullable.
   // (Postgres ALTER ... DROP NOT NULL is idempotent in practice; guard via info schema.)
   const pwCol = await db('information_schema.columns')
