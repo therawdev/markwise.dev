@@ -448,8 +448,8 @@ orgsRouter.get('/:id/projects', async (req, res) => {
 
 orgsRouter.post('/:id/projects', async (req, res) => {
   const companyId = Number(req.params.id);
-  if (!(await hasPermission(req.user!, companyId, 'doc:create'))) {
-    return res.status(403).json({ error: 'You need permission to create documents' });
+  if (!(await hasPermission(req.user!, companyId, 'project:manage'))) {
+    return res.status(403).json({ error: 'You need permission to manage projects' });
   }
   const parsed = projectSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Project name required' });
@@ -460,7 +460,7 @@ orgsRouter.post('/:id/projects', async (req, res) => {
 
 orgsRouter.put('/:id/projects/:pid', async (req, res) => {
   const companyId = Number(req.params.id);
-  if (!(await hasPermission(req.user!, companyId, 'doc:create'))) {
+  if (!(await hasPermission(req.user!, companyId, 'project:manage'))) {
     return res.status(403).json({ error: 'You need permission to manage projects' });
   }
   const parsed = projectSchema.safeParse(req.body);
@@ -474,7 +474,7 @@ orgsRouter.put('/:id/projects/:pid', async (req, res) => {
 // Deleting a project just unfiles its documents (FK is ON DELETE SET NULL).
 orgsRouter.delete('/:id/projects/:pid', async (req, res) => {
   const companyId = Number(req.params.id);
-  if (!(await hasPermission(req.user!, companyId, 'doc:create'))) {
+  if (!(await hasPermission(req.user!, companyId, 'project:manage'))) {
     return res.status(403).json({ error: 'You need permission to manage projects' });
   }
   const n = await db('projects').where({ id: Number(req.params.pid), company_id: companyId }).delete();

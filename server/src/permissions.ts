@@ -7,6 +7,7 @@ export const PERMISSIONS = [
   { key: 'doc:delete', label: 'Delete documents' },
   { key: 'doc:export', label: 'Export documents (PDF/Word/Markdown)' },
   { key: 'doc:share', label: 'Share documents' },
+  { key: 'project:manage', label: 'Create and manage projects' },
   { key: 'ai:generate', label: 'Generate visuals with AI' },
   { key: 'org:manage_members', label: 'Invite and remove members' },
   { key: 'org:manage_roles', label: 'Create and edit roles' },

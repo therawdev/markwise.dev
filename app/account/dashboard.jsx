@@ -36,6 +36,8 @@
     const [starredOnly, setStarredOnly] = useState(false);
     const [projFilter, setProjFilter] = useState('all'); // 'all' | 'none' | projectId
     const [projByCo, setProjByCo] = useState({});        // companyId -> [{id,name}]
+    const [newProjOpen, setNewProjOpen] = useState(false);
+    const [newProjName, setNewProjName] = useState('');
 
     // ---- new doc workspace selector ----
     const [newDocCo, setNewDocCo] = useState('');
@@ -135,6 +137,19 @@
       } catch (e) { toast(e.message); }
     };
     const allProjects = Object.keys(projByCo).reduce((acc, cid) => acc.concat(projByCo[cid] || []), []);
+    const reloadProjects = (cid) => window.MarkwiseAPI.get('/api/orgs/' + cid + '/projects')
+      .then((ps) => setProjByCo((m) => ({ ...m, [cid]: ps }))).catch(() => {});
+    const createProject = async (cid) => {
+      const nm = newProjName.trim();
+      if (!nm) return;
+      try { await window.MarkwiseAPI.post('/api/orgs/' + cid + '/projects', { name: nm }); setNewProjName(''); setNewProjOpen(false); reloadProjects(cid); toast('Project created'); }
+      catch (e) { toast(e.message); }
+    };
+    // Projects chip bar: scoped to the selected company workspace, else all projects.
+    const selectedCompany = /^\d+$/.test(wsFilter) ? parseInt(wsFilter, 10) : null;
+    const barProjects = selectedCompany ? (projByCo[selectedCompany] || []) : allProjects;
+    const canManageProjectsHere = !!selectedCompany && (me.is_app_owner
+      || ((allMemberships.find((m) => m.company_id === selectedCompany) || {}).permissions || []).includes('project:manage'));
 
     // app owner: fetch all companies from admin endpoint
     useEffect(() => {
@@ -382,6 +397,32 @@
                   <option value="title">Title A–Z</option>
                 </select>
               </div>
+
+              {barProjects.length > 0 || canManageProjectsHere ? (
+                <div className="proj-bar">
+                  <span className="proj-lead">Projects</span>
+                  <button className={'chip' + (projFilter === 'all' ? ' on' : '')} onClick={() => setProjFilter('all')}>All</button>
+                  {barProjects.map((p) => (
+                    <button key={p.id} className={'chip' + (projFilter === String(p.id) ? ' on' : '')} onClick={() => setProjFilter(String(p.id))}>
+                      {p.name}{p.doc_count != null ? <span className="pc">{p.doc_count}</span> : null}
+                    </button>
+                  ))}
+                  <button className={'chip' + (projFilter === 'none' ? ' on' : '')} onClick={() => setProjFilter('none')}>No project</button>
+                  {canManageProjectsHere ? (
+                    newProjOpen ? (
+                      <span className="new-proj">
+                        <input className="fld" autoFocus value={newProjName} placeholder="Project name"
+                          onChange={(e) => setNewProjName(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') createProject(selectedCompany); if (e.key === 'Escape') { setNewProjOpen(false); setNewProjName(''); } }} />
+                        <button className="primary-btn sm" onClick={() => createProject(selectedCompany)}>Add</button>
+                        <button className="ghost-btn sm" onClick={() => { setNewProjOpen(false); setNewProjName(''); }}>Cancel</button>
+                      </span>
+                    ) : (
+                      <button className="chip" onClick={() => setNewProjOpen(true)}>+ New project</button>
+                    )
+                  ) : null}
+                </div>
+              ) : null}
 
               {loading ? (
                 <div className="empty-note">Loading…</div>

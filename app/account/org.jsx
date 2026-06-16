@@ -4,7 +4,7 @@
 
   // Permission groups mirror org.html's PERM_GROUPS (API key strings)
   const PERM_GROUPS = [
-    { label: 'Documents & AI', keys: ['doc:view', 'doc:create', 'doc:edit', 'doc:delete', 'doc:export', 'doc:share', 'ai:generate'] },
+    { label: 'Documents & AI', keys: ['doc:view', 'doc:create', 'doc:edit', 'doc:comment', 'doc:delete', 'doc:export', 'doc:share', 'project:manage', 'ai:generate'] },
     { label: 'Team',           keys: ['org:manage_members', 'org:manage_roles'] },
     { label: 'Company',        keys: ['org:settings', 'org:billing'] },
   ];
@@ -592,7 +592,7 @@
 
           {/* ===== PROJECTS TAB ===== */}
           {tab === 'projects' ? (
-            <MWProjectsTab companyId={companyId} canManage={myPermSet.has('doc:create')} toast={toast} />
+            <MWProjectsTab companyId={companyId} canManage={myPermSet.has('project:manage')} toast={toast} />
           ) : null}
 
           {/* ===== AI USAGE / CREDITS TAB ===== */}
