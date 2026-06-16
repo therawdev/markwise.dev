@@ -34,6 +34,8 @@
     const [sort, setSort] = useState('updated');
     const [wsFilter, setWsFilter] = useState('all');
     const [starredOnly, setStarredOnly] = useState(false);
+    const [projFilter, setProjFilter] = useState('all'); // 'all' | 'none' | projectId
+    const [projByCo, setProjByCo] = useState({});        // companyId -> [{id,name}]
 
     // ---- new doc workspace selector ----
     const [newDocCo, setNewDocCo] = useState('');
@@ -110,6 +112,30 @@
       window.MarkwiseAPI.get('/api/docs/shared-with-me').then(setSharedWithMe).catch(() => {});
     }, []);
 
+    // projects for each company the user belongs to (for the filter + per-doc assignment)
+    useEffect(() => {
+      const cos = allMemberships.map((m) => m.company_id);
+      if (!cos.length) return;
+      Promise.all(cos.map((cid) =>
+        window.MarkwiseAPI.get('/api/orgs/' + cid + '/projects').then((ps) => [cid, ps]).catch(() => [cid, []])
+      )).then((pairs) => {
+        const map = {};
+        for (const [cid, ps] of pairs) map[cid] = ps;
+        setProjByCo(map);
+      });
+    }, []);
+
+    // move a company document into / out of a project
+    const assignProject = async (doc, val) => {
+      const project_id = val === '' ? null : Number(val);
+      try {
+        await window.MarkwiseAPI.put('/api/docs/' + doc.id, { project_id });
+        const pname = project_id == null ? null : ((projByCo[doc.company_id] || []).find((p) => p.id === project_id) || {}).name || null;
+        setDocs((ds) => ds.map((d) => (d.id === doc.id ? { ...d, project_id, project_name: pname } : d)));
+      } catch (e) { toast(e.message); }
+    };
+    const allProjects = Object.keys(projByCo).reduce((acc, cid) => acc.concat(projByCo[cid] || []), []);
+
     // app owner: fetch all companies from admin endpoint
     useEffect(() => {
       if (!me.is_app_owner) return;
@@ -128,6 +154,11 @@
         if (wsFilter === 'all') return true;
         if (wsFilter === 'personal') return !d.company_id;
         return d.company_id === parseInt(wsFilter, 10);
+      })
+      .filter((d) => {
+        if (projFilter === 'all') return true;
+        if (projFilter === 'none') return !d.project_id;
+        return d.project_id === parseInt(projFilter, 10);
       })
       .filter((d) => !starredOnly || d.starred)
       .slice()
@@ -335,6 +366,13 @@
                     ))}
                   </select>
                 ) : null}
+                {allProjects.length > 0 ? (
+                  <select className="fld sel" value={projFilter} onChange={(e) => setProjFilter(e.target.value)}>
+                    <option value="all">All projects</option>
+                    <option value="none">No project</option>
+                    {allProjects.map((p) => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
+                  </select>
+                ) : null}
                 <select
                   className="fld sel"
                   value={sort}
@@ -359,6 +397,7 @@
                     <tr>
                       <th>Title</th>
                       <th>Workspace</th>
+                      <th>Project</th>
                       <th>Updated</th>
                       <th className="num"></th>
                     </tr>
@@ -408,6 +447,16 @@
                               ? doc.company_name || ('Company ' + doc.company_id)
                               : 'Personal'}
                           </span>
+                        </td>
+                        <td>
+                          {doc.company_id && canEditDoc(doc) ? (
+                            <select className="fld sel" value={doc.project_id || ''} onChange={(e) => assignProject(doc, e.target.value)}>
+                              <option value="">No project</option>
+                              {(projByCo[doc.company_id] || []).map((p) => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
+                            </select>
+                          ) : doc.project_name ? (
+                            <span className="ws-chip">{doc.project_name}</span>
+                          ) : <span className="dim">—</span>}
                         </td>
                         <td className="dim">{mwAgo(doc.updated_at)}</td>
                         <td className="num">

@@ -429,6 +429,60 @@ orgsRouter.post('/:id/members/:userId/reject', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ---- projects: named folders that group a company's documents ----
+const projectSchema = z.object({ name: z.string().min(1).max(120) });
+
+orgsRouter.get('/:id/projects', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await hasPermission(req.user!, companyId, 'doc:view')) && !req.user!.is_app_owner) {
+    return res.status(403).json({ error: 'Not a member of this company' });
+  }
+  const rows = await db('projects').where({ company_id: companyId }).orderBy('name').select('id', 'name', 'created_at');
+  const counts = await db('documents')
+    .where({ company_id: companyId }).whereNotNull('project_id').whereNull('deleted_at')
+    .groupBy('project_id').select('project_id').count('id as n');
+  const cmap: Record<number, number> = {};
+  for (const c of counts) cmap[Number((c as any).project_id)] = Number((c as any).n);
+  res.json(rows.map((r) => ({ ...r, doc_count: cmap[r.id] || 0 })));
+});
+
+orgsRouter.post('/:id/projects', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await hasPermission(req.user!, companyId, 'doc:create'))) {
+    return res.status(403).json({ error: 'You need permission to create documents' });
+  }
+  const parsed = projectSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Project name required' });
+  const [p] = await db('projects').insert({ company_id: companyId, name: parsed.data.name.trim(), created_by: req.user!.id }).returning('*');
+  await audit(req.user!.id, 'project.create', `company:${companyId}`, { name: p.name });
+  res.json({ id: p.id, name: p.name, doc_count: 0 });
+});
+
+orgsRouter.put('/:id/projects/:pid', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await hasPermission(req.user!, companyId, 'doc:create'))) {
+    return res.status(403).json({ error: 'You need permission to manage projects' });
+  }
+  const parsed = projectSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Project name required' });
+  const n = await db('projects').where({ id: Number(req.params.pid), company_id: companyId }).update({ name: parsed.data.name.trim() });
+  if (!n) return res.status(404).json({ error: 'Project not found' });
+  await audit(req.user!.id, 'project.update', `company:${companyId}`, { name: parsed.data.name });
+  res.json({ ok: true });
+});
+
+// Deleting a project just unfiles its documents (FK is ON DELETE SET NULL).
+orgsRouter.delete('/:id/projects/:pid', async (req, res) => {
+  const companyId = Number(req.params.id);
+  if (!(await hasPermission(req.user!, companyId, 'doc:create'))) {
+    return res.status(403).json({ error: 'You need permission to manage projects' });
+  }
+  const n = await db('projects').where({ id: Number(req.params.pid), company_id: companyId }).delete();
+  if (!n) return res.status(404).json({ error: 'Project not found' });
+  await audit(req.user!.id, 'project.delete', `company:${companyId}`, {});
+  res.json({ ok: true });
+});
+
 // ---- invites (link/code based) ----
 orgsRouter.post('/:id/invites', async (req, res) => {
   const companyId = Number(req.params.id);

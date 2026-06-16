@@ -184,7 +184,7 @@
     const [loadErr, setLoadErr] = useState(null);
     // The active tab is URL-driven (/org/:id/:tab). Normalise common/odd segments
     // (e.g. the singular "member") to a real tab id; unknown → members.
-    const ORG_TABS = ['members', 'roles', 'billing', 'usage', 'ai-keys', 'activity', 'settings'];
+    const ORG_TABS = ['members', 'roles', 'projects', 'billing', 'usage', 'ai-keys', 'activity', 'settings'];
     const normTab = (t) => (t === 'member' ? 'members' : ORG_TABS.indexOf(t) !== -1 ? t : 'members');
     const [tab, setTab] = useState(normTab(tabProp || 'members'));
     const selectTab = (t) => { setTab(t); navigate('/org/' + companyId + '/' + t); };
@@ -268,8 +268,9 @@
     const roleNames  = roles.map((r) => r.name);
 
     const tabDefs = [
-      { id: 'members',  label: 'Members',            count: members.length },
+      { id: 'members',  label: 'Members',            count: members.filter((m) => m.member_status !== 'pending').length },
       { id: 'roles',    label: 'Roles & permissions', count: roles.length },
+      { id: 'projects', label: 'Projects' },
     ];
     if (canBilling)  tabDefs.push({ id: 'billing',  label: 'Billing' });
     tabDefs.push(    { id: 'usage',    label: 'AI usage' });
@@ -587,6 +588,11 @@
           {/* ===== BILLING TAB ===== */}
           {tab === 'billing' && canBilling ? (
             <MWBillingTab companyId={companyId} org={org} setPlan={setPlan} />
+          ) : null}
+
+          {/* ===== PROJECTS TAB ===== */}
+          {tab === 'projects' ? (
+            <MWProjectsTab companyId={companyId} canManage={myPermSet.has('doc:create')} toast={toast} />
           ) : null}
 
           {/* ===== AI USAGE / CREDITS TAB ===== */}
@@ -1119,5 +1125,76 @@
     );
   }
 
-  Object.assign(window, { MWOrgPage, MWRoleMatrix, MWOrgProvidersTab, MWOrgCredits, MWOrgSsoTab });
+  // ===== PROJECTS TAB — named folders that group the company's documents =====
+  function MWProjectsTab({ companyId, canManage, toast }) {
+    const API = window.MarkwiseAPI;
+    const [list, setList] = useState(null);
+    const [name, setName] = useState('');
+    const [editing, setEditing] = useState(null); // { id, value }
+    const [busy, setBusy] = useState(false);
+    const load = () => API.get('/api/orgs/' + companyId + '/projects').then(setList).catch((e) => toast(e.message));
+    useEffect(() => { load(); }, [companyId]);
+
+    const create = async (e) => {
+      e.preventDefault();
+      if (!name.trim()) return;
+      setBusy(true);
+      try { await API.post('/api/orgs/' + companyId + '/projects', { name: name.trim() }); setName(''); load(); }
+      catch (e) { toast(e.message); } finally { setBusy(false); }
+    };
+    const rename = async (p) => {
+      const v = (editing.value || '').trim();
+      if (!v || v === p.name) { setEditing(null); return; }
+      try { await API.put('/api/orgs/' + companyId + '/projects/' + p.id, { name: v }); setEditing(null); load(); }
+      catch (e) { toast(e.message); }
+    };
+    const del = async (p) => {
+      try { await API.del('/api/orgs/' + companyId + '/projects/' + p.id); toast('Project deleted'); load(); }
+      catch (e) { toast(e.message); }
+    };
+
+    return (
+      <MWSection title="Projects" sub="Folders that group this company's documents. Members assign documents to a project from the dashboard. Deleting a project just unfiles its documents.">
+        {canManage ? (
+          <form className="inline-form" onSubmit={create} style={{ marginBottom: 14 }}>
+            <input className="fld" value={name} placeholder="New project name" onChange={(e) => setName(e.target.value)} />
+            <button className="primary-btn" type="submit" disabled={busy || !name.trim()}>Add project</button>
+          </form>
+        ) : null}
+        <div className="card">
+          {!list ? <div className="empty-note">Loading…</div>
+            : list.length === 0 ? <div className="empty-note">No projects yet.{canManage ? ' Create one above.' : ''}</div> : (
+              <table className="tbl">
+                <thead><tr><th>Project</th><th className="num">Documents</th><th className="num"></th></tr></thead>
+                <tbody>
+                  {list.map((p) => (
+                    <tr key={p.id}>
+                      <td>
+                        {editing && editing.id === p.id ? (
+                          <input className="fld sel wide" autoFocus value={editing.value}
+                            onChange={(e) => setEditing({ id: p.id, value: e.target.value })}
+                            onBlur={() => rename(p)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); rename(p); } if (e.key === 'Escape') setEditing(null); }} />
+                        ) : <b>{p.name}</b>}
+                      </td>
+                      <td className="num dim">{p.doc_count}</td>
+                      <td className="num">
+                        {canManage ? (
+                          <span className="row-actions">
+                            <button className="ghost-btn sm" onClick={() => setEditing({ id: p.id, value: p.name })}>Rename</button>
+                            <MWConfirmDelete label="Delete" className="sm" onConfirm={() => del(p)} />
+                          </span>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+        </div>
+      </MWSection>
+    );
+  }
+
+  Object.assign(window, { MWOrgPage, MWRoleMatrix, MWOrgProvidersTab, MWOrgCredits, MWOrgSsoTab, MWProjectsTab });
 })();

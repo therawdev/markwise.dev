@@ -23,6 +23,7 @@ docsRouter.get('/', async (req, res) => {
   const docs = await db('documents')
     .leftJoin('companies', 'companies.id', 'documents.company_id')
     .leftJoin('users', 'users.id', 'documents.owner_id')
+    .leftJoin('projects', 'projects.id', 'documents.project_id')
     .where((q) => {
       q.where('documents.owner_id', req.user!.id);
       if (viewableCompanyIds.length) q.orWhereIn('documents.company_id', viewableCompanyIds);
@@ -36,7 +37,9 @@ docsRouter.get('/', async (req, res) => {
       'documents.owner_id',
       'documents.updated_at',
       'documents.starred',
+      'documents.project_id',
       'companies.name as company_name',
+      'projects.name as project_name',
       'users.name as owner_name'
     );
   res.json(docs);
@@ -164,6 +167,15 @@ docsRouter.put('/:id', async (req, res) => {
   if (req.body?.title != null) patch.title = String(req.body.title).slice(0, 200);
   if (req.body?.blocks != null) patch.blocks = JSON.stringify(req.body.blocks);
   if (req.body?.starred != null) patch.starred = Boolean(req.body.starred);
+  // Assign/clear the document's project (a folder within its company).
+  if (req.body?.project_id !== undefined) {
+    const pid = req.body.project_id === null ? null : Number(req.body.project_id);
+    if (pid !== null) {
+      const proj = await db('projects').where({ id: pid, company_id: doc.company_id }).first();
+      if (!proj) return res.status(400).json({ error: 'Project not found in this company' });
+    }
+    patch.project_id = pid;
+  }
   const [updated] = await db('documents').where({ id: doc.id }).update(patch).returning('updated_at');
 
   if (req.body?.title != null) {
