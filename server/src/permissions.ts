@@ -24,7 +24,7 @@ export const DEFAULT_ROLES: { name: string; permissions: PermissionKey[] }[] = [
   { name: 'Owner', permissions: [...ALL_PERMISSIONS] },
   {
     name: 'User',
-    permissions: ['doc:view', 'doc:create', 'doc:edit', 'doc:comment', 'doc:export', 'doc:share', 'ai:generate'],
+    permissions: ['doc:view', 'doc:create', 'doc:edit', 'doc:comment', 'doc:export', 'doc:share', 'project:manage', 'ai:generate'],
   },
 ];
 

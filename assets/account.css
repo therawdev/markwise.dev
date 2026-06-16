@@ -599,6 +599,22 @@
   .proj-bar .chip.on .pc { color: var(--accent); }
   .proj-bar .new-proj { display: inline-flex; gap: 6px; align-items: center; }
   .proj-bar .new-proj .fld { width: 160px; padding: 5px 9px; font-size: 12.5px; }
+
+  /* selected-project action bar (create / add existing / rename / delete) */
+  .proj-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--hairline); }
+  .proj-actions .proj-name { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+  .proj-actions .proj-count { font-size: 12px; color: var(--grey); }
+  .proj-actions .proj-spacer { flex: 1 1 auto; }
+  .proj-actions .fld { width: 200px; padding: 5px 9px; font-size: 13px; }
+
+  /* document picker inside the "add files" modal */
+  .pick-list { border: 1px solid var(--hairline); border-radius: 10px; max-height: 340px; overflow: auto; }
+  .pick-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--hairline); font-size: 13px; }
+  .pick-row:last-child { border-bottom: 0; }
+  .pick-row:hover { background: #fbfaf8; }
+  .pick-row.on { background: var(--accent-soft); }
+  .pick-row .pick-title { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .modal-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
   .result-note { font-size: 12px; font-weight: 600; margin-top: 8px; line-height: 1.5; }
   .result-note.ok { color: #246b3d; }
   .result-note.err { color: #b3422f; }

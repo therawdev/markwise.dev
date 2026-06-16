@@ -363,20 +363,26 @@ async function migrate() {
     });
   }
 
-  // Backfill: every role that can edit documents should also be able to comment,
-  // and the immutable Owner role gets the full (now-larger) permission set.
+  // Backfill: the immutable Owner role gets the full (now-larger) permission set;
+  // every role that can edit documents should also be able to comment; and every
+  // role that can create documents should also be able to manage projects (so org
+  // members — not just owners — can create projects).
+  const { ALL_PERMISSIONS } = await import('./permissions.js');
   const roles = await db('roles').select('id', 'name', 'is_system', 'permissions');
   for (const r of roles) {
     const perms: string[] = typeof r.permissions === 'string' ? JSON.parse(r.permissions) : r.permissions || [];
-    let next = perms;
     if (r.is_system && r.name === 'Owner') {
-      // keep Owner all-powerful as the catalog grows
-      const { ALL_PERMISSIONS } = await import('./permissions.js');
-      next = [...ALL_PERMISSIONS];
-    } else if (perms.includes('doc:edit') && !perms.includes('doc:comment')) {
-      next = [...perms, 'doc:comment'];
+      // Keep Owner exactly equal to the full catalog as it grows. Write unconditionally
+      // (idempotent JSON) so a same-count catalog change — e.g. a renamed key — can't be
+      // missed by a length/content guard.
+      await db('roles').where({ id: r.id }).update({ permissions: JSON.stringify([...ALL_PERMISSIONS]) });
+      continue;
     }
-    if (next !== perms) {
+    // The additive backfill only ever grows the set, so a length change is an exact proxy.
+    const next = [...perms];
+    if (next.includes('doc:edit') && !next.includes('doc:comment')) next.push('doc:comment');
+    if (next.includes('doc:create') && !next.includes('project:manage')) next.push('project:manage');
+    if (next.length !== perms.length) {
       await db('roles').where({ id: r.id }).update({ permissions: JSON.stringify(next) });
     }
   }

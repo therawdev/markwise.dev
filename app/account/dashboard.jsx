@@ -38,6 +38,9 @@
     const [projByCo, setProjByCo] = useState({});        // companyId -> [{id,name}]
     const [newProjOpen, setNewProjOpen] = useState(false);
     const [newProjName, setNewProjName] = useState('');
+    const [addFilesOpen, setAddFilesOpen] = useState(false); // "add existing files" modal
+    const [renamingProj, setRenamingProj] = useState(null);  // { id, value }
+    const renameBusy = React.useRef(false);                  // de-dupe in-flight project rename
 
     // ---- new doc workspace selector ----
     const [newDocCo, setNewDocCo] = useState('');
@@ -150,6 +153,63 @@
     const barProjects = selectedCompany ? (projByCo[selectedCompany] || []) : allProjects;
     const canManageProjectsHere = !!selectedCompany && (me.is_app_owner
       || ((allMemberships.find((m) => m.company_id === selectedCompany) || {}).permissions || []).includes('project:manage'));
+
+    // ---- the project currently filtered to (chip or dropdown), for the action bar ----
+    const projCompany = {}; // projectId -> companyId
+    Object.keys(projByCo).forEach((cid) => (projByCo[cid] || []).forEach((p) => { projCompany[p.id] = Number(cid); }));
+    const selProjId = /^\d+$/.test(projFilter) ? parseInt(projFilter, 10) : null;
+    const selProj = selProjId ? allProjects.find((p) => p.id === selProjId) || null : null;
+    const selProjCo = selProj ? projCompany[selProj.id] : null;
+    const canManageSelProj = selProjCo != null && (me.is_app_owner
+      || ((allMemberships.find((m) => m.company_id === selProjCo) || {}).permissions || []).includes('project:manage'));
+
+    // create a fresh document filed directly into the selected project
+    const createDocInProject = async (proj) => {
+      const cid = projCompany[proj.id];
+      if (!canCreateInCompany(cid)) { toast('Your role can’t create documents here'); return; }
+      try {
+        const doc = await window.MarkwiseAPI.post('/api/docs', {
+          title: 'Untitled document', company_id: cid, project_id: proj.id,
+        });
+        location.href = '/index.html?doc=' + doc.id;
+      } catch (e) { toast(e.message); }
+    };
+    // file existing documents into the project
+    const addExistingToProject = async (proj, ids) => {
+      if (!ids.length) { setAddFilesOpen(false); return; }
+      try {
+        for (const id of ids) await window.MarkwiseAPI.put('/api/docs/' + id, { project_id: proj.id });
+        setDocs((ds) => ds.map((d) => (ids.includes(d.id) ? { ...d, project_id: proj.id, project_name: proj.name } : d)));
+        reloadProjects(projCompany[proj.id]);
+        setAddFilesOpen(false);
+        toast(ids.length + (ids.length === 1 ? ' file added to ' : ' files added to ') + proj.name);
+      } catch (e) { toast(e.message); }
+    };
+    const renameProject = async (proj, value) => {
+      // The input fires both Enter and blur (blur also fires as it unmounts), so guard
+      // against a duplicate PUT/toast for one rename with an in-flight ref.
+      if (renameBusy.current) return;
+      const nm = (value || '').trim();
+      if (!nm || nm === proj.name) { setRenamingProj(null); return; }
+      renameBusy.current = true;
+      setRenamingProj(null);
+      const cid = projCompany[proj.id];
+      try {
+        await window.MarkwiseAPI.put('/api/orgs/' + cid + '/projects/' + proj.id, { name: nm });
+        reloadProjects(cid); toast('Project renamed');
+      } catch (e) { toast(e.message); }
+      finally { renameBusy.current = false; }
+    };
+    const deleteProject = async (proj) => {
+      const cid = projCompany[proj.id];
+      try {
+        await window.MarkwiseAPI.del('/api/orgs/' + cid + '/projects/' + proj.id);
+        setProjFilter('all');
+        setDocs((ds) => ds.map((d) => (d.project_id === proj.id ? { ...d, project_id: null, project_name: null } : d)));
+        reloadProjects(cid);
+        toast('Project deleted');
+      } catch (e) { toast(e.message); }
+    };
 
     // app owner: fetch all companies from admin endpoint
     useEffect(() => {
@@ -370,7 +430,7 @@
                   <select
                     className="fld sel"
                     value={wsFilter}
-                    onChange={(e) => setWsFilter(e.target.value)}
+                    onChange={(e) => { setWsFilter(e.target.value); setProjFilter('all'); }}
                   >
                     <option value="all">All workspaces</option>
                     <option value="personal">Personal</option>
@@ -420,6 +480,33 @@
                     ) : (
                       <button className="chip" onClick={() => setNewProjOpen(true)}>+ New project</button>
                     )
+                  ) : null}
+                </div>
+              ) : null}
+
+              {selProj ? (
+                <div className="proj-actions">
+                  {renamingProj && renamingProj.id === selProj.id ? (
+                    <input className="fld" autoFocus value={renamingProj.value}
+                      onChange={(e) => setRenamingProj({ id: selProj.id, value: e.target.value })}
+                      onBlur={() => renameProject(selProj, renamingProj.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') renameProject(selProj, renamingProj.value); if (e.key === 'Escape') setRenamingProj(null); }} />
+                  ) : (
+                    <span className="proj-name">{selProj.name}</span>
+                  )}
+                  <span className="proj-count">{selProj.doc_count != null ? (selProj.doc_count + (selProj.doc_count === 1 ? ' file' : ' files')) : ''}</span>
+                  <span className="proj-spacer" />
+                  {canCreateInCompany(selProjCo) ? (
+                    <button className="primary-btn sm" onClick={() => createDocInProject(selProj)}>+ New document</button>
+                  ) : null}
+                  {canCreateInCompany(selProjCo) ? (
+                    <button className="secondary-btn sm" onClick={() => setAddFilesOpen(true)}>Add existing files</button>
+                  ) : null}
+                  {canManageSelProj ? (
+                    <button className="ghost-btn sm" onClick={() => setRenamingProj({ id: selProj.id, value: selProj.name })}>Rename</button>
+                  ) : null}
+                  {canManageSelProj ? (
+                    <MWConfirmDelete label="Delete project" className="sm" onConfirm={() => deleteProject(selProj)} />
                   ) : null}
                 </div>
               ) : null}
@@ -678,6 +765,55 @@
           ) : null}
 
         </main>
+
+        {addFilesOpen && selProj ? (
+          <MWAddFilesModal
+            project={selProj}
+            docs={docs.filter((d) => d.company_id === selProjCo && d.project_id !== selProj.id)}
+            onAdd={(ids) => addExistingToProject(selProj, ids)}
+            onClose={() => setAddFilesOpen(false)}
+          />
+        ) : null}
+      </div>
+    );
+  }
+
+  // Modal: pick existing workspace documents to file into a project.
+  function MWAddFilesModal({ project, docs, onAdd, onClose }) {
+    const [sel, setSel] = useState({});
+    const [q, setQ] = useState('');
+    const toggle = (id) => setSel((s) => ({ ...s, [id]: !s[id] }));
+    const ids = Object.keys(sel).filter((k) => sel[k]).map(Number);
+    const shown = docs.filter((d) => !q.trim() || (d.title || '').toLowerCase().includes(q.trim().toLowerCase()));
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-head">
+            <b>Add files to {project.name}</b>
+            <button className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
+          </div>
+          <div className="modal-meta">Pick documents from this workspace to file into the project.</div>
+          <input className="fld search" value={q} placeholder="Search documents…" onChange={(e) => setQ(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
+          {shown.length === 0 ? (
+            <div className="empty-note">{docs.length === 0 ? 'Every document in this workspace is already in the project.' : 'Nothing matches your search.'}</div>
+          ) : (
+            <div className="pick-list">
+              {shown.map((d) => (
+                <label key={d.id} className={'pick-row' + (sel[d.id] ? ' on' : '')}>
+                  <input type="checkbox" checked={!!sel[d.id]} onChange={() => toggle(d.id)} />
+                  <span className="pick-title">{d.title || 'Untitled document'}</span>
+                  {d.project_name ? <span className="ws-chip">{d.project_name}</span> : null}
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="modal-foot">
+            <button className="ghost-btn" onClick={onClose}>Cancel</button>
+            <button className="primary-btn" disabled={!ids.length} onClick={() => onAdd(ids)}>
+              {ids.length ? 'Add ' + ids.length + (ids.length === 1 ? ' file' : ' files') : 'Add files'}
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

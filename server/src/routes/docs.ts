@@ -83,12 +83,20 @@ docsRouter.post('/', async (req, res) => {
   if (companyId != null && !(await hasPermission(req.user!, companyId, 'doc:create'))) {
     return res.status(403).json({ error: 'You need the create-documents permission in this company' });
   }
+  // Optionally file the new document straight into a project (a folder in its company).
+  let projectId: number | null = null;
+  if (req.body?.project_id != null && companyId != null) {
+    projectId = Number(req.body.project_id);
+    const proj = await db('projects').where({ id: projectId, company_id: companyId }).first();
+    if (!proj) return res.status(400).json({ error: 'Project not found in this company' });
+  }
   const [doc] = await db('documents')
     .insert({
       title: String(req.body?.title || 'Untitled').slice(0, 200),
       blocks: JSON.stringify(req.body?.blocks || []),
       owner_id: req.user!.id,
       company_id: companyId,
+      project_id: projectId,
     })
     .returning('*');
   await audit(req.user!.id, 'doc.create', `doc:${doc.id}`, { company_id: companyId });

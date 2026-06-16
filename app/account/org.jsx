@@ -184,8 +184,12 @@
     const [loadErr, setLoadErr] = useState(null);
     // The active tab is URL-driven (/org/:id/:tab). Normalise common/odd segments
     // (e.g. the singular "member") to a real tab id; unknown → members.
+    // "projects" is platform-admin only here — org members manage projects from the dashboard.
     const ORG_TABS = ['members', 'roles', 'projects', 'billing', 'usage', 'ai-keys', 'activity', 'settings'];
-    const normTab = (t) => (t === 'member' ? 'members' : ORG_TABS.indexOf(t) !== -1 ? t : 'members');
+    const normTab = (t) => {
+      const x = t === 'member' ? 'members' : ORG_TABS.indexOf(t) !== -1 ? t : 'members';
+      return x === 'projects' && !me.is_app_owner ? 'members' : x;
+    };
     const [tab, setTab] = useState(normTab(tabProp || 'members'));
     const selectTab = (t) => { setTab(t); navigate('/org/' + companyId + '/' + t); };
     const [invites, setInvites] = useState([]);
@@ -270,8 +274,9 @@
     const tabDefs = [
       { id: 'members',  label: 'Members',            count: members.filter((m) => m.member_status !== 'pending').length },
       { id: 'roles',    label: 'Roles & permissions', count: roles.length },
-      { id: 'projects', label: 'Projects' },
     ];
+    // Platform admin keeps a cross-company project surface here; org members use the dashboard.
+    if (me.is_app_owner) tabDefs.push({ id: 'projects', label: 'Projects' });
     if (canBilling)  tabDefs.push({ id: 'billing',  label: 'Billing' });
     tabDefs.push(    { id: 'usage',    label: 'AI usage' });
     if (canSettings) tabDefs.push({ id: 'ai-keys',  label: 'AI keys' });
@@ -590,9 +595,9 @@
             <MWBillingTab companyId={companyId} org={org} setPlan={setPlan} />
           ) : null}
 
-          {/* ===== PROJECTS TAB ===== */}
-          {tab === 'projects' ? (
-            <MWProjectsTab companyId={companyId} canManage={myPermSet.has('project:manage')} toast={toast} />
+          {/* ===== PROJECTS TAB (platform admin only) ===== */}
+          {tab === 'projects' && me.is_app_owner ? (
+            <MWProjectsTab companyId={companyId} canManage={true} toast={toast} />
           ) : null}
 
           {/* ===== AI USAGE / CREDITS TAB ===== */}
@@ -1126,6 +1131,7 @@
   }
 
   // ===== PROJECTS TAB — named folders that group the company's documents =====
+  // Platform-admin project manager (org members manage projects from the dashboard instead).
   function MWProjectsTab({ companyId, canManage, toast }) {
     const API = window.MarkwiseAPI;
     const [list, setList] = useState(null);
@@ -1145,7 +1151,8 @@
     const rename = async (p) => {
       const v = (editing.value || '').trim();
       if (!v || v === p.name) { setEditing(null); return; }
-      try { await API.put('/api/orgs/' + companyId + '/projects/' + p.id, { name: v }); setEditing(null); load(); }
+      setEditing(null);
+      try { await API.put('/api/orgs/' + companyId + '/projects/' + p.id, { name: v }); load(); }
       catch (e) { toast(e.message); }
     };
     const del = async (p) => {
