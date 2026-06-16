@@ -36,8 +36,9 @@
     const [starredOnly, setStarredOnly] = useState(false);
     const [projFilter, setProjFilter] = useState('all'); // 'all' | 'none' | projectId
     const [projByCo, setProjByCo] = useState({});        // companyId -> [{id,name}]
-    const [newProjOpen, setNewProjOpen] = useState(false);
+    const [newProjOpen, setNewProjOpen] = useState(false); // "new project" modal
     const [newProjName, setNewProjName] = useState('');
+    const [newProjCo, setNewProjCo] = useState('');        // workspace for the new project
     const [addFilesOpen, setAddFilesOpen] = useState(false); // "add existing files" modal
     const [renamingProj, setRenamingProj] = useState(null);  // { id, value }
     const renameBusy = React.useRef(false);                  // de-dupe in-flight project rename
@@ -142,11 +143,30 @@
     const allProjects = Object.keys(projByCo).reduce((acc, cid) => acc.concat(projByCo[cid] || []), []);
     const reloadProjects = (cid) => window.MarkwiseAPI.get('/api/orgs/' + cid + '/projects')
       .then((ps) => setProjByCo((m) => ({ ...m, [cid]: ps }))).catch(() => {});
-    const createProject = async (cid) => {
+    // Companies where the user can create projects (app owner: every company).
+    const projectableCompanies = me.is_app_owner
+      ? (adminCompanies || []).map((c) => ({ id: c.id, name: c.name }))
+      : memberships
+          .filter((m) => (m.permissions || []).includes('project:manage'))
+          .map((m) => ({ id: m.company_id, name: m.company_name || ('Company ' + m.company_id) }));
+
+    const openNewProject = (preselectCid) => {
+      const first = projectableCompanies[0] ? String(projectableCompanies[0].id) : '';
+      setNewProjCo(preselectCid != null ? String(preselectCid) : first);
+      setNewProjName('');
+      setNewProjOpen(true);
+    };
+    const submitNewProject = async () => {
+      const cid = Number(newProjCo);
       const nm = newProjName.trim();
-      if (!nm) return;
-      try { await window.MarkwiseAPI.post('/api/orgs/' + cid + '/projects', { name: nm }); setNewProjName(''); setNewProjOpen(false); reloadProjects(cid); toast('Project created'); }
-      catch (e) { toast(e.message); }
+      if (!cid || !nm) return;
+      try {
+        const p = await window.MarkwiseAPI.post('/api/orgs/' + cid + '/projects', { name: nm });
+        setNewProjOpen(false); setNewProjName('');
+        await reloadProjects(cid);
+        setProjFilter(String(p.id)); // surface the project the user just made
+        toast('Project “' + p.name + '” created');
+      } catch (e) { toast(e.message); }
     };
     // Projects chip bar: scoped to the selected company workspace, else all projects.
     const selectedCompany = /^\d+$/.test(wsFilter) ? parseInt(wsFilter, 10) : null;
@@ -407,6 +427,9 @@
                     ))}
                   </select>
                 ) : null}
+                {projectableCompanies.length > 0 ? (
+                  <button className="secondary-btn" onClick={() => openNewProject()}>+ New project</button>
+                ) : null}
                 <button className="primary-btn" onClick={createDoc}>+ New document</button>
               </span>
             }
@@ -469,17 +492,7 @@
                   ))}
                   <button className={'chip' + (projFilter === 'none' ? ' on' : '')} onClick={() => setProjFilter('none')}>No project</button>
                   {canManageProjectsHere ? (
-                    newProjOpen ? (
-                      <span className="new-proj">
-                        <input className="fld" autoFocus value={newProjName} placeholder="Project name"
-                          onChange={(e) => setNewProjName(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') createProject(selectedCompany); if (e.key === 'Escape') { setNewProjOpen(false); setNewProjName(''); } }} />
-                        <button className="primary-btn sm" onClick={() => createProject(selectedCompany)}>Add</button>
-                        <button className="ghost-btn sm" onClick={() => { setNewProjOpen(false); setNewProjName(''); }}>Cancel</button>
-                      </span>
-                    ) : (
-                      <button className="chip" onClick={() => setNewProjOpen(true)}>+ New project</button>
-                    )
+                    <button className="chip" onClick={() => openNewProject(selectedCompany)}>+ New project</button>
                   ) : null}
                 </div>
               ) : null}
@@ -773,6 +786,35 @@
             onAdd={(ids) => addExistingToProject(selProj, ids)}
             onClose={() => setAddFilesOpen(false)}
           />
+        ) : null}
+
+        {newProjOpen ? (
+          <div className="modal-overlay" onClick={() => setNewProjOpen(false)}>
+            <div className="modal-card sm" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-head">
+                <b>New project</b>
+                <button className="icon-btn" onClick={() => setNewProjOpen(false)} aria-label="Close">✕</button>
+              </div>
+              <div className="modal-meta">Projects are folders that group a company’s documents.</div>
+              {projectableCompanies.length > 1 ? (
+                <label className="fld-label">Workspace
+                  <select className="fld" value={newProjCo} onChange={(e) => setNewProjCo(e.target.value)}>
+                    {projectableCompanies.map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                  </select>
+                </label>
+              ) : projectableCompanies.length === 1 ? (
+                <div className="modal-meta" style={{ marginTop: -4 }}>Workspace: <b>{projectableCompanies[0].name}</b></div>
+              ) : null}
+              <input className="fld" autoFocus value={newProjName} placeholder="Project name"
+                style={{ width: '100%', marginTop: 6 }}
+                onChange={(e) => setNewProjName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') submitNewProject(); if (e.key === 'Escape') setNewProjOpen(false); }} />
+              <div className="modal-foot">
+                <button className="ghost-btn" onClick={() => setNewProjOpen(false)}>Cancel</button>
+                <button className="primary-btn" disabled={!newProjName.trim() || !newProjCo} onClick={submitNewProject}>Create project</button>
+              </div>
+            </div>
+          </div>
         ) : null}
       </div>
     );

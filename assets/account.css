@@ -632,8 +632,11 @@
     background: var(--surface); border: 1px solid var(--hairline); border-radius: 16px;
     padding: 20px 22px 22px; box-shadow: 0 32px 80px -20px rgba(20,18,14,.45);
   }
+  .modal-card.sm { max-width: 440px; }
   .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
   .modal-head b { font-size: 15px; }
+  .fld-label { display: block; font-size: 12px; font-weight: 600; color: var(--grey); margin-bottom: 2px; }
+  .fld-label .fld { display: block; width: 100%; margin-top: 4px; font-weight: 400; color: var(--ink); }
   .modal-meta { font-size: 12px; color: var(--grey); margin-bottom: 12px; line-height: 1.55; }
   .code-block {
     white-space: pre-wrap; word-break: break-word; background: #fbfaf8;
