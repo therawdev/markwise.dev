@@ -302,6 +302,16 @@
       } catch (e) { toast(e.message); }
     };
 
+    // ---- pending-member (domain-join) approval ----
+    const approveMember = async (m) => {
+      try { await API.post('/api/orgs/' + companyId + '/members/' + m.id + '/approve', {}); toast(m.name + ' approved'); load(); }
+      catch (e) { toast(e.message); }
+    };
+    const rejectMember = async (m) => {
+      try { await API.post('/api/orgs/' + companyId + '/members/' + m.id + '/reject', {}); toast('Rejected ' + m.name); load(); }
+      catch (e) { toast(e.message); }
+    };
+
     // ---- invite actions ----
     const generateInvite = async () => {
       if (!inviteRoleId) return;
@@ -438,12 +448,35 @@
           {/* ===== MEMBERS TAB ===== */}
           {tab === 'members' ? (
             <React.Fragment>
+              {canMembers && members.some((m) => m.member_status === 'pending') ? (
+                <MWSection title="Pending requests" sub="People who signed up with your company’s email domain. Approve to let them sign in.">
+                  <div className="card">
+                    <table className="tbl">
+                      <thead><tr><th>Name</th><th>Email</th><th className="num"></th></tr></thead>
+                      <tbody>
+                        {members.filter((m) => m.member_status === 'pending').map((m) => (
+                          <tr key={'p' + m.id}>
+                            <td><span className="member-cell"><MWAvatar name={m.name} size={26} /><b>{m.name}</b></span></td>
+                            <td className="dim">{m.email}</td>
+                            <td className="num">
+                              <span className="row-actions">
+                                <button className="primary-btn sm" onClick={() => approveMember(m)}>Approve</button>
+                                <button className="danger-btn sm" onClick={() => rejectMember(m)}>Reject</button>
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </MWSection>
+              ) : null}
               <MWSection title="Members">
                 <div className="card">
                   <table className="tbl">
                     <thead><tr><th>Name</th><th>Email</th><th>Role</th><th className="num"></th></tr></thead>
                     <tbody>
-                      {members.map((m) => {
+                      {members.filter((m) => m.member_status !== 'pending').map((m) => {
                         const lastOwner = m.role === 'Owner' && ownerCount === 1;
                         const isMe = m.id === me.id;
                         return (

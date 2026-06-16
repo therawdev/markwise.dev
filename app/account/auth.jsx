@@ -162,10 +162,24 @@
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState(null);
+    const [pending, setPending] = useState(null); // awaiting-approval message after a domain-join signup
     const [gate, setGate] = useState({ loading: true, allow: true });
     useEffect(() => {
       API.get('/api/platform').then((p) => setGate({ loading: false, allow: p.allow_signups !== false })).catch(() => setGate({ loading: false, allow: true }));
     }, []);
+
+    if (pending) {
+      return (
+        <MWAuthShell label="Signup">
+          <div className="auth-card">
+            <h1 className="auth-title">Request sent</h1>
+            <p className="auth-sub">{pending}</p>
+            <p className="auth-sub">You’ll be able to sign in (password or single sign-on) once a company owner approves your request.</p>
+            <a className="secondary-btn as-link" href="/login">Go to sign in</a>
+          </div>
+        </MWAuthShell>
+      );
+    }
 
     if (!gate.loading && !gate.allow) {
       return (
@@ -181,7 +195,8 @@
     const submit = async (e) => {
       e.preventDefault();
       try {
-        await API.post('/api/auth/signup', { name: name.trim(), email: email.trim(), password });
+        const r = await API.post('/api/auth/signup', { name: name.trim(), email: email.trim(), password });
+        if (r && r.pending) { setPending(r.message || 'Your account is awaiting approval.'); return; }
         await ctx.reload();
         navigate('/docs');
       } catch (err) { setError(err.message); }

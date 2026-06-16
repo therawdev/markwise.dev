@@ -532,46 +532,6 @@
                 </a>
               ))}
 
-              {showNewCo ? (
-                <div className="co-card form">
-                  <form onSubmit={createCompany}>
-                    <input
-                      className="fld"
-                      autoFocus
-                      value={newCoName}
-                      placeholder="Company name"
-                      onChange={(e) => setNewCoName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Escape') {
-                          setShowNewCo(false);
-                          setNewCoName('');
-                        }
-                      }}
-                    />
-                    <button
-                      className="primary-btn"
-                      type="submit"
-                      disabled={!newCoName.trim()}
-                    >
-                      Create
-                    </button>
-                    <button
-                      className="ghost-btn"
-                      type="button"
-                      onClick={() => {
-                        setShowNewCo(false);
-                        setNewCoName('');
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </form>
-                </div>
-              ) : (
-                <button className="co-card add" onClick={() => setShowNewCo(true)}>
-                  + New company
-                </button>
-              )}
             </div>
           </MWSection>
 
